@@ -1,0 +1,11 @@
+#ifndef VERSION_H
+#define VERSION_H
+
+// Auto-generated version information from Git
+#define GIT_VERSION "@GIT_VERSION@"
+#define GIT_COMMIT_HASH "@GIT_COMMIT_HASH@"
+#define GIT_BRANCH "@GIT_BRANCH@"
+#define BUILD_DATE __DATE__
+#define BUILD_TIME __TIME__
+
+#endif // VERSION_H

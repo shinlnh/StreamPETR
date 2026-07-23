@@ -1,0 +1,12 @@
+car_width 0.02
+carpet_width 1.06
+car_to_carpet_distance 1.6
+carpet_length 1.4
+tl_x 0.408818
+tl_y 0.476954
+tr_x 0.629259
+tr_y 0.478958
+br_x 0.737475
+br_y 0.563126
+bl_x 0.330661
+bl_y 0.549098

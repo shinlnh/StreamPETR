@@ -1,0 +1,3 @@
+std_msgs/Header header
+ipc_helper/Vector3f linear_velocity
+ipc_helper/Vector3f angular_velocity

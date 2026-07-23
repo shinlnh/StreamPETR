@@ -1,0 +1,25 @@
+module OledServiceTopic {
+  @topic
+  struct Status {
+    @key long subject_id;
+    long display_status;
+    long access_point;
+    long battery_percent;
+    long num_client;
+    string type;
+    long payload_len;
+  };
+
+  @topic
+  struct Text {
+    @key long subject_id;
+    string text_msg;
+    string type;
+    long payload_len;
+  };
+
+  struct Oled {
+    Status status_data;
+    Text text_data;
+  };
+};

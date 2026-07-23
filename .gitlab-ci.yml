@@ -1,0 +1,66 @@
+stages:
+  - Static_Check
+  - Build
+  - Unit_Test
+  - Integration_Test
+
+static_check:
+  stage: Static_Check
+  tags:
+    - PC-163
+  script:
+    - echo "Static Check.........."
+    - ./script/static_analysis_scripts/run_static_analysis_scripts.sh -o html
+  artifacts:
+    paths:
+      - ./cppcheck_report/html_report
+    expire_in: 1 week
+
+build:
+  stage: Build
+  tags:
+    - PC-163
+  script:
+    - echo "Starting to build project.........."
+    - ./script/pc_build.sh --test -j4
+  artifacts:
+    paths:
+      - ./pc_build
+    expire_in: 1 week   
+
+unit_test:
+  stage: Unit_Test
+  tags:
+    - PC-163
+  script:
+    - echo "Starting to build Unit Test Project.........."
+    - ./script/test_scripts/run_test_scripts.sh --mode=build --type=unit-test
+    
+    - echo "Starting to run Unit Test Script.........."
+    - ./script/test_scripts/run_test_scripts.sh --mode=run --type=unit-test
+    
+    - echo "Generating Summary Report.........."
+    - ./script/test_scripts/generate_test_scripts.sh
+  dependencies:
+    - build  
+  artifacts:
+    paths:
+      - ./adas_service/summary_report
+    expire_in: 1 week
+
+integration_test:
+  stage: Integration_Test
+  tags:
+    - PC-163
+  script:
+    - echo "Starting to build Integration Test Project.........."
+    - ./script/test_scripts/run_test_scripts.sh --mode=build --type=integration-test
+
+    - echo "Starting to run Integration Test Script.........."
+    - ./script/test_scripts/run_test_scripts.sh --mode=run --type=integration-test
+  dependencies:
+    - build  
+  artifacts:
+    paths:
+      - ./adas_service/*/test_it/build/*/coverage_report
+    expire_in: 1 week

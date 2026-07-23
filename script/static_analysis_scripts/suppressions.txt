@@ -1,0 +1,4 @@
+missingInclude
+missingIncludeSystem
+
+*:*/example.cpp

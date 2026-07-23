@@ -1,0 +1,13 @@
+std_msgs/Header header 
+float32 velocity
+float32 fps
+float32 controller_theta
+float32 controller_error
+float32 controller_tau
+float32 controller_angle
+float32 reference_velocity
+float32 reference_distance
+float32 distance_captured
+int32 state_id
+bool disable_drive_assist
+bool aeb_state

@@ -1,0 +1,9 @@
+ipc_helper/SFFClaimState[] claim_states
+int32 state_type
+float32 time_danger
+float32 time_reaction
+float32 time_warning
+float32 time_hit
+float32 distance_brake_threshold
+bool in_low_vel_range
+bool in_stop_state

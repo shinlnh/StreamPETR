@@ -1,0 +1,53 @@
+/*
+ * Distributed under the OpenDDS License.
+ * See: http://www.opendds.org/license.html
+ */
+#include "tao/OctetSeq.pidl"
+
+module CanServiceTopic {
+
+  @topic
+  struct ControlMsg {
+    unsigned short lka_state;        
+    unsigned short steer_request;  
+    unsigned short brake_amount;
+    unsigned short brake_pedal;
+    unsigned short gas_released;
+    unsigned short gas_pedal;
+    unsigned short drive_engaged;
+    unsigned short gear;
+    string type;
+    @key long subject_id;
+    long payload_len;
+  };
+
+  @topic
+  struct StatusMsg {
+    unsigned short steer_override;
+    short steer_angle_t;
+    short steer_angle;
+    short steer_rate;
+    long speed;
+    string type;
+    @key long subject_id;
+    long payload_len;
+  };
+  
+  struct Message {
+    ControlMsg control_data;
+    StatusMsg status_data;
+  };
+
+  @topic
+  struct ManualControlMsg {
+    @key long subject_id;
+    float brake;
+    long gear;
+    boolean hand_brake;
+    boolean manual_gear_shift;
+    boolean reverse;
+    float steer;
+    float throttle;
+    long payload_len;
+  };
+};

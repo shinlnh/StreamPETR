@@ -1,0 +1,3 @@
+[submodule "can_service/CANopenDemo"]
+	path = can_service/CANopenDemo
+	url = https://github.com/CANopenNode/CANopenDemo

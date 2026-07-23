@@ -1,0 +1,80 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+
+        <!-- Common -->
+        <file>resources/qml/components/common/TextButton.qml</file>
+        <file>resources/qml/components/common/ImageTextButton.qml</file>
+        <file>resources/qml/components/common/CardContainer.qml</file>
+        <file>resources/qml/components/common/CustomButton.qml</file>
+        <file>resources/qml/components/common/ToggleSwitch.qml</file>
+        <file>resources/qml/components/common/CustomTextInput.qml</file>
+
+        <!-- Header -->
+        <file>resources/qml/components/header/Header.qml</file>
+        <file>resources/qml/components/header/HeaderIcon.qml</file>
+
+        <!-- Control Panel -->
+        <file>resources/qml/components/control/ControlPanel.qml</file>
+        <file>resources/qml/components/control/StatusInfo.qml</file>
+        <file>resources/qml/components/control/TopDownView.qml</file>
+        <file>resources/qml/components/control/MiniTopDownView.qml</file>
+        <file>resources/qml/components/control/TopDownViewLegend.qml</file>
+        <file>resources/qml/components/control/AdjustButton.qml</file>
+        <file>resources/qml/components/control/GirdRound.qml</file>
+        <file>resources/qml/components/control/Objects.qml</file>
+        <file>resources/qml/components/control/Lanes.qml</file>
+        <file>resources/qml/components/control/PathPlanning.qml</file>
+        <file>resources/qml/components/control/FOV.qml</file>
+        <file>resources/qml/components/control/MiniFOV.qml</file>
+        <file>resources/qml/components/control/SettingsStatusInfo.qml</file>
+        <file>resources/qml/components/control/qmldir</file>
+
+        <!-- Camera Panel -->
+        <file>resources/qml/components/camera/CameraPanel.qml</file>
+
+        <!-- Settings Panel -->
+        <file>resources/qml/components/settings/SettingsPanel.qml</file>
+        <file>resources/qml/components/settings/FpsWindow.qml</file>
+        <file>resources/qml/components/settings/SettingsState.qml</file>
+        <file>resources/qml/components/settings/qmldir</file>
+
+        <!-- Dialogs -->
+        <file>resources/qml/components/dialogs/WarningDialog.qml</file>
+
+        <!-- style -->
+        <file>resources/qml/style/Theme.qml</file>
+        <file>resources/qml/style/ObjectStyles.qml</file>
+        <file>resources/qml/style/qmldir</file>
+        
+        <!-- Utils -->
+        <file>resources/qml/utils/VectorDrawing.js</file>
+        <file>resources/qml/utils/ObjectDrawing.js</file>
+        <file>resources/qml/utils/ObjectModel.js</file>
+        <file>resources/qml/utils/Dialogs.js</file>
+
+        <!-- Assets -->
+        <file>assets/icons/control_off.png</file>
+        <file>assets/icons/control_on.png</file>
+        <file>assets/icons/calib_off.png</file>
+        <file>assets/icons/calib_on.png</file>
+        <file>assets/icons/param_off.png</file>
+        <file>assets/icons/param_on.png</file>
+        <file>assets/icons/capture_off.png</file>
+        <file>assets/icons/capture_on.png</file>
+        <file>assets/icons/ip_address_submit_icon.png</file>
+        <file>assets/icons/minus_icon.png</file>
+        <file>assets/icons/plus_icon.png</file>
+        <file>assets/icons/aeb_icon.png</file>
+        <file>assets/icons/setting_icon.png</file>
+        <file>assets/icons/gauge_left.png</file>
+        <file>assets/icons/gauge_right.png</file>
+        <file>assets/icons/info.png</file>
+
+        <file>assets/logo/LogoBV.png</file>
+        
+        <file>assets/vector/ego_vehicle_vector.png</file>
+
+        <file>assets/model3.png</file>
+    </qresource>
+</RCC>

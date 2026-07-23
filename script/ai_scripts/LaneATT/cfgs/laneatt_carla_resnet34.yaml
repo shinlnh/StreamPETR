@@ -1,0 +1,87 @@
+# Model settings
+val_every: 1
+model_checkpoint_interval: 1
+seed: 0
+model:
+  name: LaneATT
+  parameters:
+    backbone: resnet34
+    S: &S 72
+    topk_anchors: 1000
+    anchors_freq_path: 'data/carla_anchors_freq.pt'
+    img_h: &img_h 360
+    img_w: &img_w 640
+    n_class: 9  # 2 to disable classification, else enter number of class
+    batch: &batch 4
+    new_model: True
+batch_size: *batch
+epochs: 15
+loss_parameters: {}
+train_parameters:
+  conf_threshold:
+  nms_thres: 15.
+  nms_topk: 3000
+test_parameters:
+  conf_threshold: 0.3
+  nms_thres: 50.
+  nms_topk: &max_lanes 4
+optimizer:
+  name: Adam
+  parameters:
+    lr: 0.0003
+lr_scheduler:
+  name: CosineAnnealingLR
+  parameters:
+    T_max: 260000 # 3807 iters * 15 epochs
+
+# Dataset settings
+datasets:
+  train:
+    type: LaneDataset
+    parameters:
+      S: *S
+      dataset: carla
+      split: train
+      img_size: [*img_h, *img_w]
+      max_lanes: *max_lanes
+      normalize: false
+      aug_chance: 1.0
+      augmentations:
+        - name: Affine
+          parameters:
+            translate_px:
+             x: !!python/tuple [-25, 25]
+             y: !!python/tuple [-10, 10]
+            rotate: !!python/tuple [-6, 6]
+            scale: !!python/tuple [0.85, 1.15]
+        - name: HorizontalFlip
+          parameters:
+            p: 0.5
+
+      root: &root "../carla_dataset_generator/data/dataset/Town04/label_raw.json"
+
+  test:
+    type: LaneDataset
+    parameters:
+      S: *S
+      dataset: carla
+      split: test
+      img_size: [*img_h, *img_w]
+      max_lanes: *max_lanes
+      normalize: false
+      aug_chance: 0
+      augmentations:
+      root: *root
+
+  val:
+    type: LaneDataset
+    parameters:
+      S: *S
+      dataset: carla
+      split: val
+      img_size: [*img_h, *img_w]
+      max_lanes: *max_lanes
+      normalize: false
+      aug_chance: 0
+      augmentations:
+      root: *root

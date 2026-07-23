@@ -1,0 +1,9 @@
+{
+    "throttle": "float",
+    "steer": "float",
+    "brake": "float",
+    "hand_brake": "bool",
+    "reverse": "bool",
+    "gear": "int32_t",
+    "manual_gear_shift": "bool"
+}

@@ -1,0 +1,13 @@
+[Unit]
+Description=OLED service for BV ADAS
+DefaultDependencies=no
+Wants=network-online.target
+After=network.target network-online.target
+
+[Service]
+Type=idle
+ExecStartPre=/bin/sh /lib/banvien/oled-service-startup.sh start
+ExecStart=/lib/banvien/oled_service --start 42 /dev/fb2
+
+[Install]
+WantedBy=multi-user.target

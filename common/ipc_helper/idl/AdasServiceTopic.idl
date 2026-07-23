@@ -1,0 +1,49 @@
+/*
+ * Distributed under the OpenDDS License.
+ * See: http://www.opendds.org/license.html
+ */
+#include "tao/OctetSeq.pidl"
+
+module AdasServiceTopic {
+
+  @topic
+  struct ControlMsg {
+    @key long subject_id;
+    float brake;
+    long gear;
+    boolean hand_brake;
+    boolean manual_gear_shift;
+    boolean reverse;
+    float steer;
+    float throttle;
+    long payload_len;
+  };
+
+  @topic
+  struct ManualControlMsg {
+    @key long subject_id;
+    float brake;
+    long gear;
+    boolean hand_brake;
+    boolean manual_gear_shift;
+    boolean reverse;
+    float steer;
+    float throttle;
+    long payload_len;
+  };
+
+  @topic
+  struct image {
+    @key long subject_id;
+    CORBA::OctetSeq payload;
+    long payload_len;
+  };
+
+  @topic
+  struct CarStatus {
+    @key long long subject_id;
+    long long time_stamp;
+    float velocity;
+    long payload_len;
+  };
+};

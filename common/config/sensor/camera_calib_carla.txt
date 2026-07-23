@@ -1,0 +1,12 @@
+car_width 2.163450000
+carpet_width 6.0
+camera_to_carpet_distance 3.1
+carpet_length 35.0
+top_left_x 369
+top_left_y 412
+top_right_x 431
+top_right_y 412
+bottom_right_x 782
+bottom_right_y 560
+bottom_left_x 16
+bottom_left_y 560

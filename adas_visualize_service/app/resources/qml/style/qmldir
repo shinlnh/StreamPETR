@@ -1,0 +1,3 @@
+module style
+singleton Theme 1.0 Theme.qml
+singleton ObjectStyles 1.0 ObjectStyles.qml

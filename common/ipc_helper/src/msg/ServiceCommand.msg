@@ -1,0 +1,9 @@
+std_msgs/Header header
+bool capture_enabled
+bool control_lks_enabled
+bool control_acc_enabled
+bool control_aeb_enabled
+bool aeb_takeover
+float32 velocity_ref
+float32 distance_ref
+uint32 flag_modified

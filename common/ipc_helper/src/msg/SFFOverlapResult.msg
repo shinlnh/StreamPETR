@@ -1,0 +1,10 @@
+bool hit
+int32 object_index
+int32 ego_sample_index
+int32 obj_sample_index
+bool ego_in_stop_state
+float32 t_hit_ego
+float32 t_hit_obj
+ipc_helper/SFFClaimState ego_overlap
+ipc_helper/SFFClaimState obj_overlap
+int32 level

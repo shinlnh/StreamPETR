@@ -1,0 +1,34 @@
+{
+    "process_name": "OledService",
+    "executable":
+    {
+        "platform_application": true,
+        "timer_resolution_ns": 1000
+    },
+    "startup_configs":
+    [
+        {
+            "config_name_for_convenience": "Machine: Startup",
+            "depends":
+            [
+            ],
+            "machine_states":
+            [
+                "Startup"
+            ],
+            "function_group_states":
+            [
+            ],
+            "resource_group": "Resource group OLED",
+            "scheduling_policy": "Round Robin",
+            "scheduling_priority": 12,
+            "termination_behavior": "PROCESS-IS-NOT-SELF-TERMINATING",
+            "arguments":
+            [
+                "--start",
+                "42",
+                "/dev/fb2"
+            ]
+        }
+    ]
+}

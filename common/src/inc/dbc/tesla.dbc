@@ -1,0 +1,129 @@
+VERSION ""
+
+
+NS_ : 
+		NS_DESC_
+		CM_
+		BA_DEF_
+		BA_
+		VAL_
+		CAT_DEF_
+		CAT_
+		FILTER
+		BA_DEF_DEF_
+		EV_DATA_
+		ENVVAR_DATA_
+		SGTYPE_
+		SGTYPE_VAL_
+		BA_DEF_SGTYPE_
+		BA_SGTYPE_
+		SIG_TYPE_REF_
+		VAL_TABLE_
+		SIG_GROUP_
+		SIG_VALTYPE_
+		SIGTYPE_VALTYPE_
+		BO_TX_BU_
+		BA_DEF_REL_
+		BA_REL_
+		BA_DEF_DEF_REL_
+		BU_SG_REL_
+		BU_EV_REL_
+		BU_BO_REL_
+		SG_MUL_VAL_
+
+BS_:
+
+BU_:
+
+
+
+BO_ 280 EPS_DriverControl: 8 Vector__XXX
+	SG_ EPS_brakePedalPos : 0|8@1+ (0.4,0) [0|100] "%" Vector__XXX
+	SG_ EPS_gearLeverPos : 21|3@1+ (1,0) [0|7] "" Vector__XXX
+	SG_ EPS_accelPedalPos : 8|8@1+ (0.4,0) [0|100] "%" Vector__XXX
+	SG_ EPS_steeringAngle : 24|16@1+ (0.0013,-42.59775) [-42.59775|42.59775] "degree" Vector__XXX
+
+BO_ 921 EPS_ButtonStatus: 8 Vector__XXX
+	SG_ EPS_lksState : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ EPS_accState : 8|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ EPS_aebState : 16|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ EPS_disableAdas : 24|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ EPS_incSpeedLimit : 32|2@1+ (1,0) [0|3] "" Vector__XXX
+	SG_ EPS_decSpeedLimit : 40|2@1+ (1,0) [0|3] "" Vector__XXX
+	SG_ EPS_incDisLimit : 48|2@1+ (1,0) [0|3] "" Vector__XXX
+	SG_ EPS_decDisLimit : 56|2@1+ (1,0) [0|3] "" Vector__XXX
+
+BO_ 809 EPS_TakeOverStatus: 8 Vector__XXX
+	SG_ EPS_CONTROL_takeOver : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ EPS_AEB_takeOver : 1|1@1+ (1,0) [0|1] "" Vector__XXX
+
+
+
+
+
+
+BO_ 697 ADAS_Control: 8 Vector__XXX
+	SG_ ADAS_steeringAngleRequest : 0|16@1+ (0.0013,-42.59775) [-42.59775|42.59775] "degree" Vector__XXX
+	SG_ ADAS_throttleRequest : 16|8@1+ (0.4,0) [0|100] "%" Vector__XXX
+	SG_ ADAS_brakeRequest : 24|8@1+ (0.4,0) [0|100] "%" Vector__XXX
+
+BO_ 1160 ADAS_Warning: 8 Vector__XXX
+	SG_ ADAS_aebWarning : 0|2@1+ (1,0) [0|3] "" Vector__XXX
+	SG_ ADAS_laneExists : 2|1@1+ (1,0) [0|1] "" Vector__XXX
+	SG_ ADAS_laneDeparture : 3|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 257 SS_StateMotion: 8 Vector__XXX
+	SG_ SS_lateralAccel : 0|10@1+ (0.006,-3.069) [-3.069|3.069] "m/s^2" Vector__XXX
+	SG_ SS_longitudinalVelocity : 23|15@1+ (0.0052,-85.1942) [-85.1942|85.1942] "m/s" Vector__XXX
+	SG_ SS_yawRate : 49|10@1+ (0.006,-3.069) [-3.069|3.069] "rad/s" Vector__XXX
+	SG_ SS_lateralVelocity : 38|11@1+ (0.0098,-10.0303) [-10.0303|10.0303] "m/s" Vector__XXX
+	SG_ SS_longitudinalAccel : 10|13@1+ (0.01,-40.955) [-40.955|40.955] "m/s^2" Vector__XXX
+
+BO_ 341 SS_ChassisStatus: 8 Vector__XXX
+	SG_ SS_wheelAngles : 0|11@1+ (0.0007,-0.71645) [-0.71645|0.71645] "rad" Vector__XXX
+	SG_ SS_gearLever : 11|2@1+ (1,1) [1|4] "" Vector__XXX
+
+BO_ 810 ADAS_State: 8 Vector__XXX
+	SG_ ADAS_idleState : 0|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_brakeState : 1|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_lksState : 2|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_tjaState : 3|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_accState : 4|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_hwcState : 5|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+	SG_ ADAS_tjcState : 6|1@1+ (1,0) [0|1] "True/False" Vector__XXX
+
+BO_ 858 EPS_AlertMatrix: 8 Vector__XXX
+	SG_ EPS_notOkToStartDrive : 0|1@1+ (1,0) [0|1] "" Vector__XXX
+
+BO_ 1016 ADAS_ControlSetting: 8 Vector__XXX
+	SG_ ADAS_speedLimit : 0|11@1+ (0.1,0) [0|204.7] "km/h" Vector__XXX
+	SG_ ADAS_disLimit : 16|10@1+ (0.1,0) [0|102.3] "m" Vector__XXX
+
+
+
+BA_DEF_ SG_  "SPN" INT 0 524287;
+BA_DEF_ BO_  "VFrameFormat" ENUM  "StandardCAN","ExtendedCAN","reserved","J1939PG";
+BA_DEF_  "DatabaseVersion" STRING ;
+BA_DEF_  "BusType" STRING ;
+BA_DEF_  "ProtocolType" STRING ;
+BA_DEF_  "DatabaseCompiler" STRING ;
+BA_DEF_DEF_  "SPN" 0;
+BA_DEF_DEF_  "VFrameFormat" "J1939PG";
+BA_DEF_DEF_  "DatabaseVersion" "DEMO PLUS";
+BA_DEF_DEF_  "BusType" "";
+BA_DEF_DEF_  "ProtocolType" "";
+BA_DEF_DEF_  "DatabaseCompiler" "";
+BA_ "ProtocolType" "J1939";
+BA_ "BusType" "CAN";
+BA_ "DatabaseCompiler" "CSS ELECTRONICS (WWW.CSSELECTRONICS.COM)";
+BA_ "DatabaseVersion" "1.0.0";
+BA_ "VFrameFormat" BO_ 280 3;
+
+VAL_ 921 EPS_incSpeedLimit 0 "DONT_PRESS" 1 "SHORT_PRESS" 2 "LONG_PRESS";
+VAL_ 921 EPS_decSpeedLimit 0 "DONT_PRESS" 1 "SHORT_PRESS" 2 "LONG_PRESS";
+VAL_ 921 EPS_incDisLimit 0 "DONT_PRESS" 1 "SHORT_PRESS" 2 "LONG_PRESS";
+VAL_ 921 EPS_decDisLimit 0 "DONT_PRESS" 1 "SHORT_PRESS" 2 "LONG_PRESS";
+VAL_ 921 EPS_lksState 0 "DONT_PRESS" 1 "PRESS";
+VAL_ 921 EPS_accState 0 "DONT_PRESS" 1 "PRESS";
+VAL_ 921 EPS_aebState 0 "DONT_PRESS" 1 "PRESS";
+VAL_ 921 EPS_disableAdas 0 "DONT_PRESS" 1 "PRESS";

@@ -1,0 +1,17 @@
+float32 pos_x
+float32 pos_y
+float32 yaw
+float32 t
+float32 path_length
+float32 v
+float32 a
+float32 b
+int32 shape_type
+float32 circle_center_x
+float32 circle_center_y
+float32 circle_radius
+float32 obb_center_x
+float32 obb_center_y
+float32 obb_half_l
+float32 obb_half_w
+float32 obb_yaw
