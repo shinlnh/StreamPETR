@@ -1,0 +1,34 @@
+<launch>
+  <!-- input topic name -->
+  <arg name="input/img_front" default="/nuscenes/CAM_FRONT/image"/>
+  <arg name="input/img_front_right" default="/nuscenes/CAM_FRONT_RIGHT/image"/>
+  <arg name="input/img_front_left" default="/nuscenes/CAM_FRONT_LEFT/image"/>
+  <arg name="input/img_back" default="/nuscenes/CAM_BACK/image"/>
+  <arg name="input/img_back_left" default="/nuscenes/CAM_BACK_LEFT/image"/>
+  <arg name="input/img_back_right" default="/nuscenes/CAM_BACK_RIGHT/image"/>
+
+  <arg name="input/odometry" default="/nuscenes/egopose">
+
+  <!-- output topic name-->
+  <arg name="output/bboxes" default="/bboxes"/>
+  
+  <!-- params -->
+  <arg name="param_path" default="$(find-pkg-share tensorrt_stream_petr)/config/tensorrt_stream_petr.param.yaml" />
+  <arg name="weight_path" default="$(find-pkg-share tensorrt_stream_petr)/weights/"/>
+
+  <!-- Launch node -->
+  <node pkg="tensorrt_stream_petr" exec="stream_petr_node" name="stream_petr" output="screen">
+    <!-- ros topic name -->
+    <remap from="~/input/topic_img_front" to="$(var input/img_front)"/>
+    <remap from="~/input/topic_img_front_right" to="$(var input/img_front_right)"/>
+    <remap from="~/input/topic_img_front_left" to="$(var input/img_front_left)"/>
+    <remap from="~/input/topic_img_back" to="$(var input/img_back)"/>
+    <remap from="~/input/topic_img_back_left" to="$(var input/img_back_left)"/>
+    <remap from="~/input/topic_img_back_right" to="$(var input/img_back_right)"/>
+    <remap from="~/input/odometry" to="$(var input/odometry)"/>
+
+    <remap from="~/output/boxes" to="$(var output/boxes)"/>
+
+    <param from="$(var param_path)" allow_substs="true" />
+  </node>
+</launch>

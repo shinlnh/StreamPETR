@@ -1,0 +1,16 @@
+/**:
+  ros__parameters:
+    model_params:
+      weights_path: "$(var weight_path)"
+      position_range: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
+      embed_dims: 256
+      depth_start: 1
+      depth_num: 64
+      LID: True
+      num_propagated: 128
+      memory_len: 512
+    post_process_params:
+      topk: 128
+      confidence_threshold: 0.5
+      point_cloud_range: [-61.2, -61.2, -10.0, 61.2, 61.2, 10.0]
+      # circle_nms_dist_threshold: 0.5
