@@ -1,0 +1,20 @@
+# Additional packages used with the Python 3.8/CUDA 11.6 dependencies already
+# present in Anchor3DLane/Model/.deps-py38 on this workstation.
+mmdet==2.28.2
+mmsegmentation==0.30.0
+nuscenes-devkit==1.1.11
+numpy==1.23.5
+matplotlib==3.5.3
+pyquaternion==0.9.9
+terminaltables==3.1.10
+pycocotools==2.0.7
+networkx==2.8.8
+numba==0.56.4
+scikit-image==0.19.3
+plyfile==0.7.4
+trimesh==2.35.39
+lyft-dataset-sdk==0.0.8
+tensorboard==2.13.0
+einops==0.6.1
+# MMCV 1.7.0 still calls yapf.api.FormatCode(..., verify=True).
+yapf==0.32.0
