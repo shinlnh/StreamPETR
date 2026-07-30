@@ -43,6 +43,7 @@ class Petr3D(MVXTwoStageDetector):
                  position_level=0,
                  aux_2d_only=True,
                  single_test=False,
+                 require_cuda_inference=False,
                  pretrained=None):
         super(Petr3D, self).__init__(pts_voxel_layer, pts_voxel_encoder,
                              pts_middle_encoder, pts_fusion_layer,
@@ -56,6 +57,7 @@ class Petr3D(MVXTwoStageDetector):
         self.num_frame_backbone_grads = num_frame_backbone_grads
         self.num_frame_losses = num_frame_losses
         self.single_test = single_test
+        self.require_cuda_inference = require_cuda_inference
         self.stride = stride
         self.position_level = position_level
         self.aux_2d_only = aux_2d_only
@@ -278,6 +280,16 @@ class Petr3D(MVXTwoStageDetector):
   
   
     def forward_test(self, img_metas, rescale, **data):
+        if self.require_cuda_inference:
+            images = data.get('img')
+            while isinstance(images, (list, tuple)) and images:
+                images = images[0]
+            if not isinstance(images, torch.Tensor) or not images.is_cuda:
+                device = getattr(images, 'device', type(images).__name__)
+                raise RuntimeError(
+                    'Validation CPU fallback is disabled; '
+                    f'input images are on {device}'
+                )
         self.test_flag = True
         for var, name in [(img_metas, 'img_metas')]:
             if not isinstance(var, list):
@@ -311,7 +323,7 @@ class Petr3D(MVXTwoStageDetector):
             for bboxes, scores, labels in bbox_list
         ]
         return bbox_results
-    
+
     def simple_test(self, img_metas, **data):
         """Test function without augmentaiton."""
         data['img_feats'] = self.extract_img_feat(data['img'], 1)
@@ -323,4 +335,3 @@ class Petr3D(MVXTwoStageDetector):
             result_dict['pts_bbox'] = pts_bbox
         return bbox_list
 
-    

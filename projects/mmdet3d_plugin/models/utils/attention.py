@@ -21,7 +21,7 @@ from mmcv.runner.base_module import BaseModule
 try:
     from flash_attn.flash_attn_interface import flash_attn_unpadded_kvpacked_func
     from flash_attn.bert_padding import unpad_input, pad_input, index_first_axis
-except ImportError:  # FlashAttention is optional for the low-memory CARLA config.
+except ImportError:
     flash_attn_unpadded_kvpacked_func = None
     unpad_input = pad_input = index_first_axis = None
 
@@ -47,6 +47,11 @@ class FlashAttention(nn.Module):
     """
     def __init__(self, softmax_scale=None, attention_dropout=0.0, device=None, dtype=None):
         super().__init__()
+        if flash_attn_unpadded_kvpacked_func is None:
+            raise RuntimeError(
+                "FlashAttention is not installed. Use PETRMultiheadAttention "
+                "in the CARLA Blackwell config."
+            )
         self.softmax_scale = softmax_scale
         self.dropout_p = attention_dropout
         self.fp16_enabled = True
@@ -104,11 +109,6 @@ class FlashMHA(nn.Module):
 
     def __init__(self, embed_dim, num_heads, bias=True, batch_first=True, attention_dropout=0.0,
                  causal=False, device=None, dtype=None, **kwargs) -> None:
-        if flash_attn_unpadded_kvpacked_func is None:
-            raise ImportError(
-                'flash-attn is not installed. Use PETRMultiheadAttention in '
-                'the model config or install a compatible flash-attn build.'
-            )
         assert batch_first
         factory_kwargs = {'device': device, 'dtype': dtype}
         super().__init__()

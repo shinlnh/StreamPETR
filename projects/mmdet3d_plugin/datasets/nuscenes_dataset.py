@@ -9,20 +9,25 @@
 # ------------------------------------------------------------------------
 #  Modified by Shihao Wang
 # ------------------------------------------------------------------------
-import numpy as np
-from mmdet.datasets import DATASETS
-from mmdet3d.datasets import NuScenesDataset
-from mmdet.datasets import DATASETS
-import torch
-import numpy as np
-from nuscenes.eval.common.utils import Quaternion
-from mmcv.parallel import DataContainer as DC
-import random
 import math
+import random
+
+import mmcv
+import numpy as np
+import torch
+from mmcv.parallel import DataContainer as DC
 from mmcv.utils import print_log
+from mmdet.datasets import DATASETS
+from mmdet3d.core.bbox import Box3DMode, LiDARInstance3DBoxes
+from mmdet3d.core.evaluation.indoor_eval import indoor_eval
+from mmdet3d.datasets import NuScenesDataset
+from nuscenes.eval.common.utils import Quaternion
+
 from projects.mmdet3d_plugin.core.evaluation.carla_eval import (
     evaluate_carla_center_distance,
 )
+
+
 @DATASETS.register_module()
 class CustomNuScenesDataset(NuScenesDataset):
     r"""NuScenes Dataset.
@@ -76,8 +81,14 @@ class CustomNuScenesDataset(NuScenesDataset):
 
         curr_sequence = 0
         for idx in range(len(self.data_infos)):
-            if idx != 0 and len(self.data_infos[idx]['sweeps']) == 0:
-                # Not first frame and # of sweeps is 0 -> new sequence
+            if (
+                idx != 0
+                and self.data_infos[idx]["scene_token"]
+                != self.data_infos[idx - 1]["scene_token"]
+            ):
+                # Camera-only CARLA samples have no LiDAR sweeps on any frame.
+                # Scene tokens are the reliable temporal boundary for both
+                # CARLA and nuScenes-derived info files.
                 curr_sequence += 1
             res.append(curr_sequence)
 
@@ -103,7 +114,10 @@ class CustomNuScenesDataset(NuScenesDataset):
                         curr_new_flag += 1
 
                 assert len(new_flags) == len(self.flag)
-                assert len(np.bincount(new_flags)) == len(np.bincount(self.flag)) * self.seq_split_num
+                expected_groups = sum(
+                    min(self.seq_split_num, count) for count in bin_counts
+                )
+                assert len(np.bincount(new_flags)) == expected_groups
                 self.flag = np.array(new_flags, dtype=np.int64)
 
 
@@ -327,6 +341,155 @@ class CustomNuScenesDataset(NuScenesDataset):
             pipeline=pipeline,
             **kwargs
         )
+
+
+@DATASETS.register_module()
+class CarlaStreamPetrDataset(CustomNuScenesDataset):
+    """StreamPETR CARLA dataset with a simulator-native 3D IoU evaluator.
+
+    CARLA samples intentionally do not depend on a nuScenes database. Reusing
+    ``NuScenesDataset.evaluate`` would therefore fail while trying to open
+    nuScenes tables. This evaluator consumes the boxes already embedded in the
+    CARLA info files and reports class-wise 3D IoU AP/recall.
+    """
+
+    def load_annotations(self, ann_file):
+        """Load CARLA scenes without interleaving simulator-local clocks.
+
+        Every CARLA server restart resets elapsed simulation time. The
+        NuScenesDataset implementation globally sorts by timestamp, which
+        would alternate frames from many CARLA scenes. The collector already
+        writes scenes contiguously and frame indices monotonically, so retain
+        that canonical order.
+        """
+        data = mmcv.load(ann_file, file_format="pkl")
+        data_infos = list(data["infos"])[:: self.load_interval]
+        self.metadata = data["metadata"]
+        self.version = self.metadata["version"]
+
+        previous_scene = None
+        expected_frame = 0
+        closed_scenes = set()
+        for info in data_infos:
+            scene = info["scene_token"]
+            if scene != previous_scene:
+                if scene in closed_scenes:
+                    raise ValueError(f"Non-contiguous CARLA scene {scene}")
+                if previous_scene is not None:
+                    closed_scenes.add(previous_scene)
+                previous_scene = scene
+                expected_frame = 0
+            if info["frame_idx"] != expected_frame:
+                raise ValueError(
+                    f"CARLA scene {scene} expected frame {expected_frame}, "
+                    f"received {info['frame_idx']}"
+                )
+            expected_frame += 1
+        return data_infos
+
+    def evaluate(
+        self,
+        results,
+        metric=(0.25, 0.5),
+        logger=None,
+        **kwargs,
+    ):
+        if isinstance(metric, (int, float)):
+            metric = [float(metric)]
+        elif isinstance(metric, (list, tuple)):
+            try:
+                metric = [float(value) for value in metric]
+            except (TypeError, ValueError):
+                # MMDetection's CLI passes its conventional ``bbox`` token.
+                metric = [0.25, 0.5]
+        else:
+            metric = [0.25, 0.5]
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CARLA validation requires CUDA; CPU evaluator fallback is disabled"
+            )
+        eval_device = torch.device("cuda", torch.cuda.current_device())
+        mmcv.print_log(
+            f"CARLA rotated 3D IoU backend: {eval_device}",
+            logger=logger,
+        )
+
+        detections = []
+        for result in results:
+            detection = result.get("pts_bbox", result)
+            boxes = detection["boxes_3d"]
+            # StreamPETR predicts x/y velocity as the final two box values.
+            # The generic 3D IoU evaluator operates on the geometric 7-vector.
+            boxes = LiDARInstance3DBoxes(
+                boxes.tensor[:, :7].detach().to(
+                    eval_device, non_blocking=True
+                ),
+                box_dim=7,
+                origin=(0.5, 0.5, 0.0),
+            )
+            detections.append(
+                {
+                    "boxes_3d": boxes,
+                    "scores_3d": detection["scores_3d"].detach().cpu(),
+                    "labels_3d": detection["labels_3d"].detach().cpu(),
+                }
+            )
+
+        gt_annos = []
+        present_labels = set()
+        for info in self.data_infos:
+            mask = info["valid_flag"].astype(bool)
+            names = info["gt_names"][mask]
+            boxes = info["gt_boxes"][mask]
+            # NumPy infers float64 for an empty list. Empty-GT CARLA frames
+            # would then fail here because float arrays are invalid indices.
+            known = np.asarray(
+                [name in self.CLASSES for name in names],
+                dtype=np.bool_,
+            )
+            boxes = boxes[known]
+            labels = np.array(
+                [self.CLASSES.index(name) for name in names[known]],
+                dtype=np.int64,
+            )
+            present_labels.update(labels.tolist())
+            gt_annos.append(
+                {
+                    "gt_num": len(labels),
+                    "gt_boxes_upright_depth": torch.as_tensor(
+                        boxes,
+                        dtype=torch.float32,
+                        device=eval_device,
+                    ),
+                    "class": labels,
+                }
+            )
+
+        # Predictions for a category with no ground truth have undefined AP
+        # and would otherwise make the aggregate metric NaN on small splits.
+        for detection in detections:
+            labels = detection["labels_3d"]
+            keep = torch.zeros_like(labels, dtype=torch.bool)
+            for label in present_labels:
+                keep |= labels == label
+            detection["boxes_3d"] = detection["boxes_3d"][
+                keep.to(eval_device)
+            ]
+            detection["scores_3d"] = detection["scores_3d"][keep]
+            detection["labels_3d"] = labels[keep]
+
+        label2cat = {index: name for index, name in enumerate(self.CLASSES)}
+        return indoor_eval(
+            gt_annos,
+            detections,
+            metric,
+            label2cat,
+            logger=logger,
+            box_type_3d=LiDARInstance3DBoxes,
+            box_mode_3d=Box3DMode.LIDAR,
+        )
+
 
 def invert_matrix_egopose_numpy(egopose):
     """ Compute the inverse transformation of a 4x4 egopose numpy matrix."""

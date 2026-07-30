@@ -2,7 +2,11 @@ data/
 __pycache__/
 *.py[cod]
 .deps-py38/
+.venv/
+.tools/
+mmcv/
 mmdetection3d/
 work_dirs/
 ckpts/
 .torch-cache/
+train_error.log

@@ -1,0 +1,30 @@
+diff --git a/mmdet3d/__init__.py b/mmdet3d/__init__.py
+index 643c39c..9556665 100644
+--- a/mmdet3d/__init__.py
++++ b/mmdet3d/__init__.py
+@@ -22 +22,3 @@ mmcv_minimum_version = '1.5.2'
+-mmcv_maximum_version = '1.7.0'
++# MMCV 1.7.2 is the final 1.x maintenance release and is built locally for
++# CUDA 12.8 / sm_120. It keeps the 1.x APIs used by this rc6 branch.
++mmcv_maximum_version = '1.7.2'
+diff --git a/mmdet3d/core/evaluation/indoor_eval.py b/mmdet3d/core/evaluation/indoor_eval.py
+index 2ff9877..723d2d8 100644
+--- a/mmdet3d/core/evaluation/indoor_eval.py
++++ b/mmdet3d/core/evaluation/indoor_eval.py
+@@ -77 +77,2 @@ def eval_det_cls(pred, gt, iou_thr=None):
+-            gt_cur = torch.zeros([cur_gt_num, 7], dtype=torch.float32)
++            prototype = gt[img_id][0].tensor
++            gt_cur = prototype.new_zeros([cur_gt_num, 7])
+@@ -95 +96,2 @@ def eval_det_cls(pred, gt, iou_thr=None):
+-        pred_cur = torch.zeros((cur_num, 7), dtype=torch.float32)
++        prototype = pred[img_id][0][0].tensor
++        pred_cur = prototype.new_zeros((cur_num, 7))
+@@ -105,2 +107,6 @@ def eval_det_cls(pred, gt, iou_thr=None):
+-            # calculate iou in each image
+-            iou_cur = pred_cur.overlaps(pred_cur, gt_cur)
++            # Rotated 3D IoU stays on the boxes' device. CARLA validation
++            # provides CUDA boxes, then transfers only the small IoU matrix
++            # for confidence sorting and AP bookkeeping.
++            iou_cur = pred_cur.overlaps(
++                pred_cur, gt_cur
++            ).detach().cpu().numpy()
