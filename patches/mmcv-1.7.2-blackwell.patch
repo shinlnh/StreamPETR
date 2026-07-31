@@ -1,0 +1,70 @@
+diff --git a/mmcv/parallel/_functions.py b/mmcv/parallel/_functions.py
+index 43580b4..531d65c 100644
+--- a/mmcv/parallel/_functions.py
++++ b/mmcv/parallel/_functions.py
+@@ -75 +75,6 @@ class Scatter:
+-            streams = [_get_stream(device) for device in target_gpus]
++            # PyTorch >= 2.5 changed the private helper from accepting an
++            # integer CUDA index to accepting a torch.device.
++            streams = [
++                _get_stream(torch.device("cuda", device))
++                for device in target_gpus
++            ]
+diff --git a/mmcv/parallel/data_container.py b/mmcv/parallel/data_container.py
+index 62f2573..62da9c9 100644
+--- a/mmcv/parallel/data_container.py
++++ b/mmcv/parallel/data_container.py
+@@ -8,0 +9,12 @@ import torch
++def _pin_memory(data):
++    if isinstance(data, torch.Tensor):
++        return data.pin_memory()
++    if isinstance(data, dict):
++        return {key: _pin_memory(value) for key, value in data.items()}
++    if isinstance(data, tuple):
++        return tuple(_pin_memory(value) for value in data)
++    if isinstance(data, list):
++        return [_pin_memory(value) for value in data]
++    return data
++
++
+@@ -91,0 +104,6 @@ class DataContainer:
++
++    def pin_memory(self):
++        """Pin tensor payloads so MMCV can copy them to CUDA asynchronously."""
++        if not self.cpu_only:
++            self._data = _pin_memory(self._data)
++        return self
+diff --git a/mmcv/parallel/distributed.py b/mmcv/parallel/distributed.py
+index bf34cb5..e286915 100644
+--- a/mmcv/parallel/distributed.py
++++ b/mmcv/parallel/distributed.py
+@@ -1,0 +2 @@
++from contextlib import nullcontext
+@@ -159,7 +160,6 @@ class MMDistributedDataParallel(DistributedDataParallel):
+-        module_to_run = self._replicated_tensor_module if \
+-            self._use_replicated_tensor_module else self.module
+-
+-        if self.device_ids:
+-            inputs, kwargs = self.to_kwargs(  # type: ignore
+-                inputs, kwargs, self.device_ids[0])
+-            return module_to_run(*inputs[0], **kwargs[0])  # type: ignore
++        if hasattr(self, "_use_replicated_tensor_module"):
++            module_to_run = (
++                self._replicated_tensor_module
++                if self._use_replicated_tensor_module
++                else self.module
++            )
+@@ -166,0 +167,13 @@ class MMDistributedDataParallel(DistributedDataParallel):
++            # PyTorch 2.7 removed the replicated-tensor-module attributes.
++            module_to_run = self.module
++
++        ddp_context = (
++            self._inside_ddp_forward()
++            if hasattr(self, "_inside_ddp_forward")
++            else nullcontext()
++        )
++        with ddp_context:
++            if self.device_ids:
++                inputs, kwargs = self.to_kwargs(  # type: ignore
++                    inputs, kwargs, self.device_ids[0])
++                return module_to_run(*inputs[0], **kwargs[0])  # type: ignore

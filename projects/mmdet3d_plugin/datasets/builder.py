@@ -87,7 +87,11 @@ def build_dataloader(dataset,
         batch_sampler = None
 
 
-    if runner_type['type'] == 'IterBasedRunner' and shuffler_sampler['type'] =='InfiniteGroupEachSampleInBatchSampler':
+    if (
+        shuffle
+        and runner_type['type'] == 'IterBasedRunner'
+        and shuffler_sampler['type'] == 'InfiniteGroupEachSampleInBatchSampler'
+    ):
         # TODO: original has more options, but I'm not using them 
         # https://github.com/open-mmlab/mmdetection/blob/3b72b12fe9b14de906d1363982b9fba05e7d47c1/mmdet/datasets/builder.py#L145-L157
         batch_sampler = InfiniteGroupEachSampleInBatchSampler(
@@ -104,6 +108,7 @@ def build_dataloader(dataset,
         worker_init_fn, num_workers=num_workers, rank=rank,
         seed=seed) if seed is not None else None
 
+    pin_memory = kwargs.pop('pin_memory', False)
     data_loader = DataLoader(
         dataset,
         batch_size=batch_size,
@@ -111,7 +116,7 @@ def build_dataloader(dataset,
         batch_sampler=batch_sampler,
         num_workers=num_workers,
         collate_fn=partial(collate, samples_per_gpu=samples_per_gpu),
-        pin_memory=False,
+        pin_memory=pin_memory,
         worker_init_fn=init_fn,
         **kwargs)
 

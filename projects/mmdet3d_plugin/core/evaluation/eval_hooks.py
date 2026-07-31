@@ -7,11 +7,41 @@ import bisect
 import os.path as osp
 
 import mmcv
+import torch
 import torch.distributed as dist
 from mmcv.runner import DistEvalHook as BaseDistEvalHook
 from mmcv.runner import EvalHook as BaseEvalHook
+from mmdet.core import EvalHook as MMDetEvalHook
 from torch.nn.modules.batchnorm import _BatchNorm
 from mmdet.core.evaluation.eval_hooks import DistEvalHook
+
+
+def _assert_cuda_validation(runner):
+    if not torch.cuda.is_available():
+        raise RuntimeError(
+            "CUDA validation is required, but torch.cuda.is_available() is False"
+        )
+
+    model = runner.model.module if hasattr(runner.model, "module") else runner.model
+    devices = {parameter.device for parameter in model.parameters()}
+    if not devices or any(device.type != "cuda" for device in devices):
+        raise RuntimeError(
+            f"Validation CPU fallback is disabled; model devices are {devices}"
+        )
+    runner.logger.info(
+        "Validation backend locked to %s (CPU model fallback disabled)",
+        sorted(map(str, devices)),
+    )
+
+
+class CudaEvalHook(MMDetEvalHook):
+    """MMDetection evaluation hook that refuses CPU model fallback."""
+
+    def _do_evaluate(self, runner):
+        if not self._should_evaluate(runner):
+            return
+        _assert_cuda_validation(runner)
+        return super()._do_evaluate(runner)
 
 
 def _calc_dynamic_intervals(start_interval, dynamic_interval_list):
@@ -53,6 +83,7 @@ class CustomDistEvalHook(BaseDistEvalHook):
 
     def _do_evaluate(self, runner):
         """perform evaluation and save ckpt."""
+        _assert_cuda_validation(runner)
         # Synchronization of BatchNorm's buffer (running_mean
         # and running_var) is not supported in the DDP of pytorch,
         # which may cause the inconsistent performance of models in

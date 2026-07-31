@@ -26,7 +26,10 @@ from mmdet.utils import get_root_logger
 import time
 import os.path as osp
 from projects.mmdet3d_plugin.datasets.builder import build_dataloader
-from projects.mmdet3d_plugin.core.evaluation.eval_hooks import CustomDistEvalHook
+from projects.mmdet3d_plugin.core.evaluation.eval_hooks import (
+    CudaEvalHook,
+    CustomDistEvalHook,
+)
 from projects.mmdet3d_plugin.datasets import custom_build_dataset
 def custom_train_detector(model,
                    dataset,
@@ -56,6 +59,16 @@ def custom_train_detector(model,
                 f'{cfg.data.imgs_per_gpu} in this experiments')
         cfg.data.samples_per_gpu = cfg.data.imgs_per_gpu
 
+    loader_options = dict(
+        pin_memory=cfg.data.get('pin_memory', False),
+        persistent_workers=(
+            cfg.data.get('persistent_workers', False)
+            and cfg.data.workers_per_gpu > 0
+        ),
+    )
+    if cfg.data.workers_per_gpu > 0:
+        loader_options['prefetch_factor'] = cfg.data.get('prefetch_factor', 2)
+
     data_loaders = [
         build_dataloader(
             ds,
@@ -68,6 +81,7 @@ def custom_train_detector(model,
             shuffler_sampler=cfg.data.shuffler_sampler,  # dict(type='DistributedGroupSampler'),
             nonshuffler_sampler=cfg.data.nonshuffler_sampler,  # dict(type='DistributedSampler'),
             runner_type=cfg.runner,
+            **loader_options,
         ) for ds in dataset
     ]
 
@@ -175,11 +189,13 @@ def custom_train_detector(model,
             shuffle=False,
             shuffler_sampler=cfg.data.shuffler_sampler,  # dict(type='DistributedGroupSampler'),
             nonshuffler_sampler=cfg.data.nonshuffler_sampler,  # dict(type='DistributedSampler'),
+            runner_type=cfg.runner,
+            **loader_options,
         )
         eval_cfg = cfg.get('evaluation', {})
         eval_cfg['by_epoch'] = cfg.runner['type'] != 'IterBasedRunner'
         eval_cfg['jsonfile_prefix'] = osp.join('val', cfg.work_dir, time.ctime().replace(' ','_').replace(':','_'))
-        eval_hook = CustomDistEvalHook if distributed else EvalHook
+        eval_hook = CustomDistEvalHook if distributed else CudaEvalHook
         runner.register_hook(eval_hook(val_dataloader, **eval_cfg))
 
     # user-defined hooks
@@ -201,4 +217,3 @@ def custom_train_detector(model,
     elif cfg.load_from:
         runner.load_checkpoint(cfg.load_from)
     runner.run(data_loaders, cfg.workflow)
-
