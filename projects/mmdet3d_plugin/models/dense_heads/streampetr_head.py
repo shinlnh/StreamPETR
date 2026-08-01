@@ -105,6 +105,7 @@ class StreamPETRHead(AnchorFreeHead):
                  split = 0.5,
                  init_cfg=None,
                  normedlinear=False,
+                 positive_class_weights=None,
                  **kwargs):
         # NOTE here use `AnchorFreeHead` instead of `TransformerHead`,
         # since it brings inconvenience when the initialization of
@@ -159,6 +160,17 @@ class StreamPETRHead(AnchorFreeHead):
 
         self.num_query = num_query
         self.num_classes = num_classes
+        if positive_class_weights is not None:
+            if len(positive_class_weights) != num_classes:
+                raise ValueError(
+                    'positive_class_weights must contain one value per class'
+                )
+            if any(float(weight) <= 0 for weight in positive_class_weights):
+                raise ValueError('positive_class_weights must be positive')
+            positive_class_weights = tuple(
+                float(weight) for weight in positive_class_weights
+            )
+        self.positive_class_weights = positive_class_weights
         self.in_channels = in_channels
         self.memory_len = memory_len
         self.topk_proposals = topk_proposals
@@ -815,6 +827,17 @@ class StreamPETRHead(AnchorFreeHead):
         bbox_targets = torch.cat(bbox_targets_list, 0)
         bbox_weights = torch.cat(bbox_weights_list, 0)
 
+        # Increase only matched positives for under-represented categories;
+        # background focal-loss terms keep their original weight.
+        if self.positive_class_weights is not None:
+            class_weights = label_weights.new_tensor(
+                self.positive_class_weights
+            )
+            positive = labels < self.num_classes
+            positive_weights = class_weights[labels[positive]]
+            label_weights[positive] *= positive_weights
+            bbox_weights[positive] *= positive_weights.unsqueeze(-1)
+
         # classification loss
         cls_scores = cls_scores.reshape(-1, self.cls_out_channels)
         # construct weighted avg_factor to match with the official DETR repo
@@ -880,6 +903,17 @@ class StreamPETRHead(AnchorFreeHead):
                 cls_scores.new_tensor([cls_avg_factor]))
         bbox_weights = torch.ones_like(bbox_preds)
         label_weights = torch.ones_like(known_labels)
+        if self.positive_class_weights is not None:
+            class_weights = label_weights.new_tensor(
+                self.positive_class_weights
+            )
+            # DN intentionally changes some labels to the background index
+            # ``num_classes``. Weight only valid foreground labels to avoid
+            # indexing one element past the per-class weight vector.
+            positive = known_labels.long() < self.num_classes
+            positive_weights = class_weights[known_labels[positive].long()]
+            label_weights[positive] *= positive_weights
+            bbox_weights[positive] *= positive_weights.unsqueeze(-1)
         cls_avg_factor = max(cls_avg_factor, 1)
         loss_cls = self.loss_cls(
             cls_scores, known_labels.long(), label_weights, avg_factor=cls_avg_factor)

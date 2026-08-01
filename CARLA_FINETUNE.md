@@ -65,3 +65,31 @@ PYTHONPATH="$PWD/mmcv:$PWD" .venv/bin/python tools/test.py \
   work_dirs/stream_petr_r50_carla_4cam_finetune/latest.pth \
   --eval bbox
 ```
+
+## Distant-pedestrian corrective stage
+
+The far-pedestrian stage targets the validation failure mode where the median
+pedestrian is about 48 m away and only 9 px wide in a 960×540 source image.
+It uses:
+
+- natural CARLA navigation-mesh walkers between 30 m and 58 m;
+- semantic ray line-of-sight filtering to exclude actors hidden by geometry;
+- a ResNet C3/FPN stride-8 feature map instead of the stride-16 baseline;
+- a 1.5× positive-only pedestrian weight in both the 2D and 3D heads;
+- physical batch 6 with two-step accumulation (effective batch 12).
+
+The two pretrained C4/C5 lateral convolutions are remapped automatically by
+`SmallObjectCPFPN`. Only the newly added C3 lateral starts from Xavier
+initialization, so no converted checkpoint copy is required.
+
+After the 54-case far dataset collector completes, start from the checkpoint
+with the best measured pedestrian AP:
+
+```bash
+./train_carla_4cam_ped_far.sh \
+  work_dirs/stream_petr_r50_carla_4cam_ped_balanced/iter_1293.pth
+```
+
+The run is ten epochs with 2,954 micro-iterations per epoch. Checkpoint and
+GPU-only validation boundaries are aligned with the two-step gradient
+accumulation cycle.

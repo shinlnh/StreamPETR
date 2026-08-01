@@ -200,6 +200,7 @@ data = dict(
     prefetch_factor=2,
     train=dict(
         type="CarlaStreamPetrDataset",
+        point_cloud_range=point_cloud_range,
         data_root=data_root,
         ann_file=data_root + "carla_streampetr_infos_train.pkl",
         classes=class_names,
@@ -207,6 +208,7 @@ data = dict(
     ),
     val=dict(
         type="CarlaStreamPetrDataset",
+        point_cloud_range=point_cloud_range,
         # StreamPETR memory is temporal: frames must be evaluated in order,
         # so use one sequential frame while all neural compute stays on CUDA.
         samples_per_gpu=1,
@@ -217,6 +219,7 @@ data = dict(
     ),
     test=dict(
         type="CarlaStreamPetrDataset",
+        point_cloud_range=point_cloud_range,
         data_root=data_root,
         ann_file=data_root + "carla_streampetr_infos_val.pkl",
         classes=class_names,

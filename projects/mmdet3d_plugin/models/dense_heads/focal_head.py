@@ -66,6 +66,7 @@ class FocalHead(AnchorFreeHead):
                  loss_bbox2d=dict(type='L1Loss', loss_weight=5.0),
                  loss_iou2d=dict(type='GIoULoss', loss_weight=2.0),
                  loss_centers2d=dict(type='L1Loss', loss_weight=5.0),
+                 positive_class_weights=None,
                  train_cfg=dict(
                      assigner2d=dict(
                          type='HungarianAssigner2D',
@@ -93,6 +94,17 @@ class FocalHead(AnchorFreeHead):
             self.sampler = build_sampler(sampler_cfg, context=self)
 
         self.num_classes = num_classes
+        if positive_class_weights is not None:
+            if len(positive_class_weights) != num_classes:
+                raise ValueError(
+                    'positive_class_weights must contain one value per class'
+                )
+            if any(float(weight) <= 0 for weight in positive_class_weights):
+                raise ValueError('positive_class_weights must be positive')
+            positive_class_weights = tuple(
+                float(weight) for weight in positive_class_weights
+            )
+        self.positive_class_weights = positive_class_weights
         self.in_channels = in_channels
         self.embed_dims = embed_dims
 
@@ -303,6 +315,19 @@ class FocalHead(AnchorFreeHead):
         bbox_targets = torch.cat(bbox_targets_list, 0)
         bbox_weights = torch.cat(bbox_weights_list, 0)
         centers2d_targets = torch.cat(centers2d_targets_list, 0)
+
+        # The standard QFL target weights every matched category equally.
+        # CARLA distant pedestrians are both rare and sub-cell at stride 16,
+        # so allow a modest positive-only class weight without amplifying the
+        # much larger background set. Apply the same scale to localization.
+        if self.positive_class_weights is not None:
+            class_weights = label_weights.new_tensor(
+                self.positive_class_weights
+            )
+            positive = labels < self.num_classes
+            positive_weights = class_weights[labels[positive]]
+            label_weights[positive] *= positive_weights
+            bbox_weights[positive] *= positive_weights.unsqueeze(-1)
 
 
         # DETR regress the relative position of boxes (cxcywh) in the image,

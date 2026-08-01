@@ -342,7 +342,6 @@ class CustomNuScenesDataset(NuScenesDataset):
             **kwargs
         )
 
-
 @DATASETS.register_module()
 class CarlaStreamPetrDataset(CustomNuScenesDataset):
     """StreamPETR CARLA dataset with a simulator-native 3D IoU evaluator.
@@ -352,6 +351,18 @@ class CarlaStreamPetrDataset(CustomNuScenesDataset):
     nuScenes tables. This evaluator consumes the boxes already embedded in the
     CARLA info files and reports class-wise 3D IoU AP/recall.
     """
+
+    def __init__(self, point_cloud_range=None, *args, **kwargs):
+        # Validation must use the same BEV support as ObjectRangeFilter during
+        # training. The collector intentionally keeps a wider 61.2 m radial
+        # label range, while the CARLA StreamPETR head predicts within +/-51.2
+        # m. Counting unreachable GT boxes would artificially depress recall.
+        self.point_cloud_range = (
+            np.asarray(point_cloud_range, dtype=np.float32)
+            if point_cloud_range is not None
+            else None
+        )
+        super().__init__(*args, **kwargs)
 
     def load_annotations(self, ann_file):
         """Load CARLA scenes without interleaving simulator-local clocks.
@@ -440,6 +451,15 @@ class CarlaStreamPetrDataset(CustomNuScenesDataset):
         present_labels = set()
         for info in self.data_infos:
             mask = info["valid_flag"].astype(bool)
+            if self.point_cloud_range is not None:
+                x_min, y_min, _, x_max, y_max, _ = self.point_cloud_range
+                centers = info["gt_boxes"][:, :2]
+                mask &= (
+                    (centers[:, 0] >= x_min)
+                    & (centers[:, 0] <= x_max)
+                    & (centers[:, 1] >= y_min)
+                    & (centers[:, 1] <= y_max)
+                )
             names = info["gt_names"][mask]
             boxes = info["gt_boxes"][mask]
             # NumPy infers float64 for an empty list. Empty-GT CARLA frames
@@ -489,7 +509,6 @@ class CarlaStreamPetrDataset(CustomNuScenesDataset):
             box_type_3d=LiDARInstance3DBoxes,
             box_mode_3d=Box3DMode.LIDAR,
         )
-
 
 def invert_matrix_egopose_numpy(egopose):
     """ Compute the inverse transformation of a 4x4 egopose numpy matrix."""
