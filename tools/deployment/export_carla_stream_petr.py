@@ -668,8 +668,12 @@ def main() -> None:
         + ", ".join(str(tuple(item.shape)) for item in head_outputs)
     )
 
-    encoder_path = output_dir / "stream_petr_carla_4cam_encoder.onnx"
-    head_path = output_dir / "stream_petr_carla_4cam_temporal_head.onnx"
+    # Name the artefacts after the rig actually exported: the same script now
+    # serves the four-camera CARLA model and the six-camera nuCarla one.
+    camera_count = encoder_inputs[0].shape[1]
+    prefix = f"stream_petr_{camera_count}cam"
+    encoder_path = output_dir / f"{prefix}_encoder.onnx"
+    head_path = output_dir / f"{prefix}_temporal_head.onnx"
     export_onnx(
         encoder,
         encoder_inputs,
