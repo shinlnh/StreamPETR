@@ -206,3 +206,57 @@ class CPFPN(BaseModule):
                     else:
                         outs.append(self.fpn_convs[i](outs[-1]))
         return tuple(outs)
+
+
+@NECKS.register_module()
+class SmallObjectCPFPN(CPFPN):
+    """Three-level CPFPN that can warm-start from a two-level checkpoint.
+
+    The CARLA baseline consumes ResNet C4/C5 features (strides 16/32). For
+    distant pedestrians we prepend C3 (stride 8). Existing C4/C5 lateral
+    weights are shifted one slot during checkpoint loading, while the new C3
+    lateral is intentionally left at its Xavier initialization.
+    """
+
+    def _load_from_state_dict(
+        self,
+        state_dict,
+        prefix,
+        local_metadata,
+        strict,
+        missing_keys,
+        unexpected_keys,
+        error_msgs,
+    ):
+        old_c4 = prefix + "lateral_convs.0.conv.weight"
+        old_c5 = prefix + "lateral_convs.1.conv.weight"
+        new_c5 = prefix + "lateral_convs.2.conv.weight"
+        if (
+            len(self.lateral_convs) == 3
+            and old_c4 in state_dict
+            and old_c5 in state_dict
+            and new_c5 not in state_dict
+            and state_dict[old_c4].shape[1] == 1024
+            and state_dict[old_c5].shape[1] == 2048
+        ):
+            c4_weight = state_dict.pop(old_c4)
+            c5_weight = state_dict.pop(old_c5)
+            state_dict[prefix + "lateral_convs.1.conv.weight"] = c4_weight
+            state_dict[new_c5] = c5_weight
+            c4_bias = prefix + "lateral_convs.0.conv.bias"
+            c5_bias = prefix + "lateral_convs.1.conv.bias"
+            if c4_bias in state_dict and c5_bias in state_dict:
+                c4_value = state_dict.pop(c4_bias)
+                c5_value = state_dict.pop(c5_bias)
+                state_dict[prefix + "lateral_convs.1.conv.bias"] = c4_value
+                state_dict[prefix + "lateral_convs.2.conv.bias"] = c5_value
+
+        super()._load_from_state_dict(
+            state_dict,
+            prefix,
+            local_metadata,
+            strict,
+            missing_keys,
+            unexpected_keys,
+            error_msgs,
+        )
