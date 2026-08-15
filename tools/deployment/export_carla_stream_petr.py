@@ -668,8 +668,12 @@ def main() -> None:
         + ", ".join(str(tuple(item.shape)) for item in head_outputs)
     )
 
-    encoder_path = output_dir / "stream_petr_carla_4cam_encoder.onnx"
-    head_path = output_dir / "stream_petr_carla_4cam_temporal_head.onnx"
+    # Name the artefacts after the rig actually exported: the same script now
+    # serves the four-camera CARLA model and the six-camera nuCarla one.
+    camera_count = encoder_inputs[0].shape[1]
+    prefix = f"stream_petr_{camera_count}cam"
+    encoder_path = output_dir / f"{prefix}_encoder.onnx"
+    head_path = output_dir / f"{prefix}_temporal_head.onnx"
     export_onnx(
         encoder,
         encoder_inputs,
@@ -739,7 +743,7 @@ def main() -> None:
             "pedestrian",
         ],
         "input_preprocessing": {
-            "camera_count": 4,
+            "camera_count": camera_count,
             "shape_nchw": [3, 256, 704],
             "color": "RGB",
             "mean": [123.675, 116.28, 103.53],
@@ -760,8 +764,9 @@ def main() -> None:
             "sample_index": args.sample_index,
             "scene_token": metadata.get("scene_token"),
             "note": (
-                "Position embedding and camera cone are baked for the "
-                "four-camera CARLA rig used by this dataset."
+                f"Position embedding and camera cone are baked for the "
+                f"{camera_count}-camera rig this checkpoint was trained on. "
+                f"Re-export if the rig or the intrinsics change."
             ),
         },
         "inputs": input_specs,

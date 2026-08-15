@@ -76,7 +76,13 @@ def main() -> int:
 
     client = carla.Client(args.host, args.port)
     client.set_timeout(120.0)
-    world = client.load_world(args.town)
+    world = client.get_world()
+    current_map = world.get_map().name.rsplit("/", 1)[-1]
+    requested_maps = {args.town, f"{args.town}_Opt"}
+    if current_map not in requested_maps:
+        world = client.load_world(args.town)
+    else:
+        print(f"reusing already-loaded map {current_map}", flush=True)
     blueprints = world.get_blueprint_library()
 
     original_settings = world.get_settings()

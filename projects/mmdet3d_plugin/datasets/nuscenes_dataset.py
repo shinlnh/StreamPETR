@@ -11,6 +11,7 @@
 # ------------------------------------------------------------------------
 import math
 import random
+from os import path as osp
 
 import mmcv
 import numpy as np
@@ -341,6 +342,96 @@ class CustomNuScenesDataset(NuScenesDataset):
             pipeline=pipeline,
             **kwargs
         )
+
+
+@DATASETS.register_module()
+class NuCarlaDataset(CustomNuScenesDataset):
+    """nuCarla evaluated with the official nuScenes detection protocol.
+
+    nuCarla retains the ten-class nuScenes model interface, but only contains
+    six dynamic classes.  The nuCarla paper therefore reports mAP and NDS
+    after averaging over those six classes instead of counting the four
+    unavailable classes as zero.  Keep the standard nuScenes metrics and add
+    the paper-comparable six-class metrics alongside them.
+    """
+
+    NUCARLA_CLASSES = (
+        "car",
+        "truck",
+        "bus",
+        "motorcycle",
+        "bicycle",
+        "pedestrian",
+    )
+    TP_ERRORS = (
+        ("trans_err", "mATE"),
+        ("scale_err", "mASE"),
+        ("orient_err", "mAOE"),
+        ("vel_err", "mAVE"),
+        ("attr_err", "mAAE"),
+    )
+
+    def _evaluate_single(
+        self,
+        result_path,
+        logger=None,
+        metric="bbox",
+        result_name="pts_bbox",
+    ):
+        detail = super()._evaluate_single(
+            result_path=result_path,
+            logger=logger,
+            metric=metric,
+            result_name=result_name,
+        )
+
+        missing_classes = set(self.NUCARLA_CLASSES) - set(self.CLASSES)
+        if missing_classes:
+            raise ValueError(
+                "nuCarla evaluation requires the six published classes; "
+                f"missing {sorted(missing_classes)}"
+            )
+
+        output_prefix = f"{result_name}_NuCarla"
+        metrics = mmcv.load(
+            osp.join(osp.dirname(result_path), "metrics_summary.json")
+        )
+        class_aps = {}
+        for class_name in self.NUCARLA_CLASSES:
+            ap_values = [
+                float(value)
+                for value in metrics["label_aps"][class_name].values()
+            ]
+            if not ap_values:
+                raise KeyError(f"No nuScenes AP values found for {class_name}")
+            class_aps[class_name] = float(np.mean(ap_values))
+            detail[f"{output_prefix}/{class_name}_AP"] = class_aps[class_name]
+
+        mean_ap = float(np.mean(list(class_aps.values())))
+        tp_scores = []
+        for error_name, summary_name in self.TP_ERRORS:
+            class_errors = [
+                float(metrics["label_tp_errors"][class_name][error_name])
+                for class_name in self.NUCARLA_CLASSES
+            ]
+            mean_error = float(np.mean(class_errors))
+            detail[f"{output_prefix}/{summary_name}"] = mean_error
+            tp_scores.append(max(0.0, 1.0 - mean_error))
+
+        nd_score = float((5.0 * mean_ap + sum(tp_scores)) / 10.0)
+        detail[f"{output_prefix}/mAP"] = mean_ap
+        detail[f"{output_prefix}/NDS"] = nd_score
+        # MMCV embeds ``save_best`` directly into the checkpoint filename, so
+        # expose slash-free aliases for best-checkpoint selection.
+        detail["NuCarla_mAP"] = mean_ap
+        detail["NuCarla_NDS"] = nd_score
+        print_log(
+            "nuCarla six-class nuScenes metrics: "
+            f"mAP={mean_ap:.4f}, NDS={nd_score:.4f}",
+            logger=logger,
+        )
+        return detail
+
 
 @DATASETS.register_module()
 class CarlaStreamPetrDataset(CustomNuScenesDataset):
