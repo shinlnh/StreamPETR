@@ -210,6 +210,10 @@ class PETRMultiheadAttention(BaseModule):
         batch_first (bool): When it is True,  Key, Query and Value are shape of
             (batch, n, embed_dim), otherwise (n, batch, embed_dim).
              Default to False.
+        need_weights (bool): Whether to materialize attention weights. PETR
+            discards them, so disabling them lets modern PyTorch use its
+            fused scaled-dot-product-attention kernels. Default to True for
+            backward compatibility with the upstream implementation.
     """
 
     def __init__(self,
@@ -221,6 +225,7 @@ class PETRMultiheadAttention(BaseModule):
                  init_cfg=None,
                  batch_first=False,
                  fp16 = False,
+                 need_weights=True,
                  **kwargs):
         super(PETRMultiheadAttention, self).__init__(init_cfg)
         if 'dropout' in kwargs:
@@ -235,6 +240,7 @@ class PETRMultiheadAttention(BaseModule):
         self.embed_dims = embed_dims
         self.num_heads = num_heads
         self.batch_first = batch_first
+        self.need_weights = need_weights
         self.fp16_enabled = True
         if fp16:
             self.attn = MultiheadAttentionWrapper(embed_dims, num_heads, attn_drop,  **kwargs)
@@ -329,7 +335,8 @@ class PETRMultiheadAttention(BaseModule):
             key=key,
             value=value,
             attn_mask=attn_mask,
-            key_padding_mask=key_padding_mask)[0]
+            key_padding_mask=key_padding_mask,
+            need_weights=self.need_weights)[0]
 
         if self.batch_first:
             out = out.transpose(0, 1).contiguous()
@@ -795,4 +802,3 @@ class PETRTemporalDecoderLayer(BaseModule):
             key_padding_mask,
         )
         return x
-

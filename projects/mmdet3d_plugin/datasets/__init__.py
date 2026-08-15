@@ -1,6 +1,12 @@
-from .nuscenes_dataset import CustomNuScenesDataset
+from .nuscenes_dataset import (
+    CarlaStreamPetrDataset,
+    CustomNuScenesDataset,
+    NuCarlaDataset,
+)
 from .builder import custom_build_dataset
 
 __all__ = [
-    'CustomNuScenesDataset'
+    'CarlaStreamPetrDataset',
+    'CustomNuScenesDataset',
+    'NuCarlaDataset',
 ]

@@ -32,7 +32,7 @@ def main() -> int:
     parser.add_argument("--capture", default="data/carla_live/capture.json")
     parser.add_argument(
         "--reference",
-        default="data/nucarla/nucarla_temporal_infos_val.pkl",
+        default="data/nucarla_full/nucarla_full_temporal_infos_val.pkl",
         help="nuCarla infos supplying the calibration",
     )
     parser.add_argument("--out", default="data/carla_live/carla_live_infos.pkl")
