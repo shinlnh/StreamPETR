@@ -10,7 +10,7 @@ from pathlib import Path
 
 import numpy as np
 
-from config import CAMERA_NAMES
+import config as cfg
 
 
 REQUIRED_KEYS = {
@@ -51,6 +51,14 @@ MATRIX_KEYS = {
     "route_turn_angle",
     "route_progress_m",
 }
+CLEAN_VISIBILITY_KEYS = {
+    "actor_ids",
+    "bboxes2d_actor_ids",
+    "visible_pixels",
+    "visibility_scores",
+    "object_visibility_scores",
+    "visible_camera_counts",
+}
 
 
 def quaternion_yaw_degrees(quaternion):
@@ -66,6 +74,11 @@ def signed_angle_delta(first, second):
 
 def parse_args():
     parser = argparse.ArgumentParser()
+    parser.add_argument(
+        "--camera-profile",
+        choices=tuple(cfg.CAMERA_PROFILES),
+        help="expected rig; by default it is read from the train info metadata",
+    )
     parser.add_argument(
         "root",
         nargs="?",
@@ -115,6 +128,7 @@ def validate_file(root, info_path):
     matrix_mode = metadata.get("collection_mode") == "scenario_matrix"
     labels2d_classes = metadata.get("labels2d_classes")
     expected_2d_classes = len(labels2d_classes) if labels2d_classes else None
+    require_clean_visibility = bool(metadata.get("instance_visibility_filter"))
     for index, info in enumerate(infos):
         missing = REQUIRED_KEYS - set(info)
         if missing:
@@ -127,7 +141,15 @@ def validate_file(root, info_path):
                         info_path, index, missing_matrix
                     )
                 )
-        if tuple(info["cams"]) != CAMERA_NAMES:
+        if require_clean_visibility:
+            missing_visibility = CLEAN_VISIBILITY_KEYS - set(info)
+            if missing_visibility:
+                raise ValueError(
+                    "{} info {} missing clean visibility fields {}".format(
+                        info_path, index, missing_visibility
+                    )
+                )
+        if tuple(info["cams"]) != cfg.CAMERA_NAMES:
             raise ValueError("{} info {} has wrong camera order".format(info_path, index))
         annotation_groups = (
             "bboxes2d",
@@ -137,13 +159,13 @@ def validate_file(root, info_path):
             "bboxes_ignore",
         )
         for key in annotation_groups:
-            if len(info[key]) != len(CAMERA_NAMES):
+            if len(info[key]) != len(cfg.CAMERA_NAMES):
                 raise ValueError(
                     "{} info {} has wrong {} camera count".format(
                         info_path, index, key
                     )
                 )
-        for camera_index in range(len(CAMERA_NAMES)):
+        for camera_index in range(len(cfg.CAMERA_NAMES)):
             boxes2d = np.asarray(info["bboxes2d"][camera_index])
             labels2d = np.asarray(info["labels2d"][camera_index])
             centers2d = np.asarray(info["centers2d"][camera_index])
@@ -181,6 +203,46 @@ def validate_file(root, info_path):
         velocity = np.asarray(info["gt_velocity"])
         if boxes.shape != (len(names), 7) or velocity.shape != (len(names), 2):
             raise ValueError("{} info {} has inconsistent GT shapes".format(info_path, index))
+        if require_clean_visibility:
+            actor_ids = np.asarray(info["actor_ids"], dtype=np.int64)
+            object_scores = np.asarray(
+                info["object_visibility_scores"], dtype=np.float32
+            )
+            visible_camera_counts = np.asarray(
+                info["visible_camera_counts"], dtype=np.int64
+            )
+            if actor_ids.shape != (len(names),):
+                raise ValueError("clean actor IDs do not align with 3D boxes")
+            if object_scores.shape != (len(names),) or np.any(object_scores <= 0):
+                raise ValueError("3D labels include an object with no clean pixels")
+            if (
+                visible_camera_counts.shape != (len(names),)
+                or np.any(visible_camera_counts < 1)
+            ):
+                raise ValueError("3D labels include an object hidden from every camera")
+            actor_id_set = set(actor_ids.tolist())
+            for camera_index in range(len(cfg.CAMERA_NAMES)):
+                count2d = len(info["bboxes2d"][camera_index])
+                aligned_visibility = (
+                    info["bboxes2d_actor_ids"][camera_index],
+                    info["visible_pixels"][camera_index],
+                    info["visibility_scores"][camera_index],
+                )
+                if any(len(values) != count2d for values in aligned_visibility):
+                    raise ValueError("clean visibility fields do not align with 2D boxes")
+                if count2d:
+                    visible_ids = set(
+                        np.asarray(
+                            info["bboxes2d_actor_ids"][camera_index],
+                            dtype=np.int64,
+                        ).tolist()
+                    )
+                    if not visible_ids <= actor_id_set:
+                        raise ValueError("2D label references an unknown CARLA actor")
+                    if np.any(
+                        np.asarray(info["visible_pixels"][camera_index]) <= 0
+                    ):
+                        raise ValueError("2D label has no rendered actor pixels")
         object_count += len(names)
         scene_counts[info["scene_token"]] = scene_counts.get(info["scene_token"], 0) + 1
         scene_infos.setdefault(info["scene_token"], []).append(info)
@@ -276,6 +338,16 @@ def validate_file(root, info_path):
 def main():
     args = parse_args()
     root = Path(args.root)
+    if args.camera_profile is None:
+        train_info_path = root / args.train_info
+        if not train_info_path.is_file():
+            raise FileNotFoundError(train_info_path)
+        with train_info_path.open("rb") as stream:
+            metadata = pickle.load(stream).get("metadata", {})
+        args.camera_profile = metadata.get(
+            "camera_profile", cfg.DEFAULT_CAMERA_PROFILE
+        )
+    cfg.activate_camera_profile(args.camera_profile)
     total_frames = total_scenes = total_objects = 0
     total_case_counts = Counter()
     all_image_paths = set()
@@ -361,7 +433,7 @@ def main():
         manifest = json.loads(manifest_path.read_text())
         if manifest.get("total_frames") != total_frames:
             raise ValueError("manifest total_frames does not match PKLs")
-        expected_images = total_frames * len(CAMERA_NAMES)
+        expected_images = total_frames * len(cfg.CAMERA_NAMES)
         if len(all_image_paths) != expected_images:
             raise ValueError(
                 "matrix references {} images, expected {}".format(
