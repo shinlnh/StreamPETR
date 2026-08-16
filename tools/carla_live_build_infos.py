@@ -17,10 +17,10 @@ from pathlib import Path
 import numpy as np
 from pyquaternion import Quaternion
 
-CAM_ORDER = [
+SIX_CAMERA_ORDER = [
     "CAM_FRONT",
-    "CAM_FRONT_LEFT",
     "CAM_FRONT_RIGHT",
+    "CAM_FRONT_LEFT",
     "CAM_BACK",
     "CAM_BACK_LEFT",
     "CAM_BACK_RIGHT",
@@ -41,6 +41,10 @@ def main() -> int:
     with open(args.capture) as stream:
         capture = json.load(stream)
 
+    camera_order = capture.get("camera_order", SIX_CAMERA_ORDER)
+    if len(camera_order) not in (6, 7) or len(set(camera_order)) != len(camera_order):
+        raise ValueError(f"invalid capture camera order: {camera_order}")
+
     with open(args.reference, "rb") as stream:
         reference = pickle.load(stream)["infos"][0]
 
@@ -54,7 +58,7 @@ def main() -> int:
             ),
             cam_intrinsic=np.asarray(reference["cams"][channel]["cam_intrinsic"]),
         )
-        for channel in CAM_ORDER
+        for channel in camera_order
     }
 
     infos = []
@@ -63,7 +67,9 @@ def main() -> int:
     for position, record in enumerate(records):
         yaw = np.radians(record["ego_yaw_deg"])
         cams = {}
-        for channel in CAM_ORDER:
+        for channel in camera_order:
+            if channel not in record["cams"]:
+                raise KeyError(f"capture frame {position} has no {channel} image")
             cams[channel] = dict(
                 data_path=record["cams"][channel],
                 type=channel,
@@ -106,7 +112,18 @@ def main() -> int:
 
     output = Path(args.out)
     with output.open("wb") as stream:
-        pickle.dump({"infos": infos, "metadata": {"version": "carla_live"}}, stream)
+        pickle.dump(
+            {
+                "infos": infos,
+                "metadata": {
+                    "version": "carla_live",
+                    "camera_profile": capture.get("camera_profile", "nucarla-6cam"),
+                    "camera_order": camera_order,
+                    "camera_fovs": capture.get("camera_fovs", {}),
+                },
+            },
+            stream,
+        )
     print(f"wrote {len(infos)} frames to {output}")
     return 0
 

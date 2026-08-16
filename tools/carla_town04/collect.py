@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Collect a nuScenes-info-compatible, six-camera CARLA dataset for StreamPETR.
+"""Collect a nuScenes-info-compatible CARLA dataset for StreamPETR.
 
 The collector is intentionally self-contained so it can run in the same
 carla-ros-bridge tool image used by ad_sim_dev_launch.  It writes RGB images
@@ -39,13 +39,23 @@ UNREAL_TO_CANONICAL = np.diag([1.0, -1.0, 1.0]).astype(np.float64)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Collect six-camera Town04 data for StreamPETR"
+        description="Collect multi-camera Town04 data for StreamPETR"
     )
     parser.add_argument("--host", default="localhost")
     parser.add_argument("--port", type=int, default=2000)
     parser.add_argument("--tm-port", type=int, default=cfg.TRAFFIC_MANAGER_PORT)
     parser.add_argument("--town", default=cfg.TOWN)
-    parser.add_argument("--output", default=cfg.OUTPUT_ROOT)
+    parser.add_argument(
+        "--camera-profile",
+        choices=tuple(cfg.CAMERA_PROFILES),
+        default=cfg.DEFAULT_CAMERA_PROFILE,
+        help="camera rig; the default remains the original six-camera rig",
+    )
+    parser.add_argument(
+        "--output",
+        default=None,
+        help="output directory (defaults to the selected profile's directory)",
+    )
     parser.add_argument("--episodes", type=int, default=cfg.EPISODES)
     parser.add_argument(
         "--frames-per-episode", type=int, default=cfg.FRAMES_PER_EPISODE
@@ -101,6 +111,9 @@ def parse_args():
         help="Use the currently loaded world instead of client.load_world().",
     )
     args = parser.parse_args()
+    cfg.activate_camera_profile(args.camera_profile)
+    if args.output is None:
+        args.output = cfg.OUTPUT_ROOT
     if args.episodes < 1 or args.frames_per_episode < 1:
         parser.error("episodes and frames-per-episode must be positive")
     if args.capture_every < 1 or args.fps < 1:
@@ -670,6 +683,8 @@ def spawn_episode_actors(
 def spawn_cameras(world, ego):
     sensors = {}
     queues = {}
+    instance_sensors = {}
+    instance_queues = {}
     library = world.get_blueprint_library()
     for name in cfg.CAMERA_NAMES:
         blueprint = library.find("sensor.camera.rgb")
@@ -698,7 +713,35 @@ def spawn_cameras(world, ego):
         sensor.listen(image_queue.put)
         sensors[name] = sensor
         queues[name] = image_queue
-    return sensors, queues
+        if cfg.REQUIRE_INSTANCE_VISIBILITY:
+            instance_blueprint = library.find(
+                "sensor.camera.instance_segmentation"
+            )
+            instance_blueprint.set_attribute(
+                "image_size_x", str(cfg.INSTANCE_IMAGE_WIDTH)
+            )
+            instance_blueprint.set_attribute(
+                "image_size_y", str(cfg.INSTANCE_IMAGE_HEIGHT)
+            )
+            instance_blueprint.set_attribute("fov", str(cfg.CAMERA_FOVS[name]))
+            instance_blueprint.set_attribute("sensor_tick", "0.0")
+            if getattr(ego, "is_virtual", False):
+                instance_sensor = world.spawn_actor(
+                    instance_blueprint,
+                    compose_transforms(ego.get_transform(), relative_transform),
+                )
+            else:
+                instance_sensor = world.spawn_actor(
+                    instance_blueprint,
+                    relative_transform,
+                    attach_to=ego,
+                    attachment_type=carla.AttachmentType.Rigid,
+                )
+            instance_queue = queue.Queue()
+            instance_sensor.listen(instance_queue.put)
+            instance_sensors[name] = instance_sensor
+            instance_queues[name] = instance_queue
+    return sensors, queues, instance_sensors, instance_queues
 
 
 def update_virtual_cameras(client, cameras, ego):
@@ -802,13 +845,143 @@ def project_actor_box(actor, camera_world_transform, intrinsic, width, height):
     )
 
 
-def collect_ground_truth(world, ego, camera_transforms, intrinsics):
+def decode_instance_actor_ids(image):
+    """Decode CARLA's 16-bit actor IDs from a raw instance camera frame."""
+    bgra = np.frombuffer(image.raw_data, dtype=np.uint8).reshape(
+        image.height, image.width, 4
+    )
+    return (
+        bgra[:, :, 1].astype(np.uint16)
+        + (bgra[:, :, 0].astype(np.uint16) << 8)
+    )
+
+
+def class_visibility_threshold(thresholds, class_name):
+    return thresholds.get(class_name, thresholds["default"])
+
+
+def clean_instance_projection(projection, actor, class_name, actor_ids):
+    """Keep only pixels the renderer says belong to this real actor.
+
+    The projected 3D cuboid alone also projects actors hidden behind walls.
+    The synchronized instance sensor uses CARLA's z-buffer, so a wall-hidden
+    actor has no matching pixels and cannot become either a 2D or a 3D label.
+    """
+    bbox, center_pixel, depth = projection
+    margin = cfg.VISIBILITY_FRAME_MARGIN_PX
+    if (
+        bbox[0] <= margin
+        or bbox[1] <= margin
+        or bbox[2] >= cfg.IMAGE_WIDTH - 1 - margin
+        or bbox[3] >= cfg.IMAGE_HEIGHT - 1 - margin
+    ):
+        return None
+    if (
+        bbox[2] - bbox[0]
+        < class_visibility_threshold(
+            cfg.VISIBILITY_MIN_RGB_BBOX_WIDTH_PX, class_name
+        )
+        or bbox[3] - bbox[1]
+        < class_visibility_threshold(
+            cfg.VISIBILITY_MIN_RGB_BBOX_HEIGHT_PX, class_name
+        )
+    ):
+        return None
+
+    instance_height, instance_width = actor_ids.shape
+    scale_x = instance_width / float(cfg.IMAGE_WIDTH)
+    scale_y = instance_height / float(cfg.IMAGE_HEIGHT)
+    x1 = max(0, int(math.floor(bbox[0] * scale_x)))
+    y1 = max(0, int(math.floor(bbox[1] * scale_y)))
+    x2 = min(instance_width, int(math.ceil(bbox[2] * scale_x)) + 1)
+    y2 = min(instance_height, int(math.ceil(bbox[3] * scale_y)) + 1)
+    if x2 <= x1 or y2 <= y1:
+        return None
+    encoded_actor_id = np.uint16(actor.id & 0xFFFF)
+    actor_mask = actor_ids[y1:y2, x1:x2] == encoded_actor_id
+    visible_pixels = int(np.count_nonzero(actor_mask))
+    if visible_pixels < int(
+        class_visibility_threshold(cfg.VISIBILITY_MIN_ACTOR_PIXELS, class_name)
+    ):
+        return None
+
+    center_x = int(round(float(center_pixel[0]) * scale_x))
+    center_y = int(round(float(center_pixel[1]) * scale_y))
+    radius = cfg.VISIBILITY_CENTER_PATCH_RADIUS_PX
+    center_x1, center_x2 = max(0, center_x - radius), min(
+        instance_width, center_x + radius + 1
+    )
+    center_y1, center_y2 = max(0, center_y - radius), min(
+        instance_height, center_y + radius + 1
+    )
+    if (
+        center_x1 >= center_x2
+        or center_y1 >= center_y2
+        or not np.any(
+            actor_ids[center_y1:center_y2, center_x1:center_x2]
+            == encoded_actor_id
+        )
+    ):
+        return None
+
+    mask_y, mask_x = np.where(actor_mask)
+    mask_x1, mask_x2 = int(mask_x.min()) + x1, int(mask_x.max()) + x1 + 1
+    mask_y1, mask_y2 = int(mask_y.min()) + y1, int(mask_y.max()) + y1 + 1
+    projected_width = max(1, x2 - x1)
+    projected_height = max(1, y2 - y1)
+    width_coverage = (mask_x2 - mask_x1) / float(projected_width)
+    height_coverage = (mask_y2 - mask_y1) / float(projected_height)
+    area_ratio = visible_pixels / float(projected_width * projected_height)
+    min_width_coverage = class_visibility_threshold(
+        cfg.VISIBILITY_MIN_WIDTH_COVERAGE, class_name
+    )
+    min_height_coverage = class_visibility_threshold(
+        cfg.VISIBILITY_MIN_HEIGHT_COVERAGE, class_name
+    )
+    min_area_ratio = class_visibility_threshold(
+        cfg.VISIBILITY_MIN_AREA_RATIO, class_name
+    )
+    if (
+        width_coverage < min_width_coverage
+        or height_coverage < min_height_coverage
+        or area_ratio < min_area_ratio
+    ):
+        return None
+    visible_bbox = np.asarray(
+        [
+            mask_x1 / scale_x,
+            mask_y1 / scale_y,
+            mask_x2 / scale_x,
+            mask_y2 / scale_y,
+        ],
+        dtype=np.float32,
+    )
+    return {
+        "bbox": visible_bbox,
+        "center": center_pixel,
+        "depth": depth,
+        "visible_pixels": visible_pixels,
+        "width_coverage": width_coverage,
+        "height_coverage": height_coverage,
+        "area_ratio": area_ratio,
+        "visibility_score": min(
+            width_coverage,
+            height_coverage,
+            area_ratio / min_area_ratio,
+        ),
+    }
+
+
+def collect_ground_truth(
+    world, ego, camera_transforms, intrinsics, instance_images=None
+):
     ego_inv = inverse_transform_matrix(ego.get_transform())
     ego_rotation_inv = ego_inv[:3, :3]
-    boxes = []
-    names = []
-    velocities = []
-    actors = []
+    decoded_instance_ids = {
+        name: decode_instance_actor_ids(image)
+        for name, image in (instance_images or {}).items()
+    }
+    candidates_3d = []
 
     candidates = list(world.get_actors().filter("vehicle.*"))
     candidates.extend(world.get_actors().filter("walker.pedestrian.*"))
@@ -843,25 +1016,34 @@ def collect_ground_truth(world, ego, camera_transforms, intrinsics):
         )
         velocity = UNREAL_TO_CANONICAL @ velocity_ego_unreal
 
-        boxes.append(np.concatenate([center, dimensions, [yaw]]))
-        names.append(name)
-        velocities.append(velocity[:2])
-        actors.append(actor)
+        candidates_3d.append(
+            (
+                actor,
+                name,
+                np.concatenate([center, dimensions, [yaw]]),
+                velocity[:2],
+            )
+        )
 
     class_to_index = {name: index for index, name in enumerate(cfg.CLASS_NAMES)}
-    bboxes2d_cams = []
-    labels2d_cams = []
-    centers2d_cams = []
-    depths_cams = []
-    bboxes_ignore_cams = []
-    for camera_name in cfg.CAMERA_NAMES:
-        camera_boxes = []
-        camera_labels = []
-        camera_centers = []
-        camera_depths = []
-        camera_world_transform = camera_transforms[camera_name]
-        intrinsic = intrinsics[camera_name]
-        for actor, name in zip(actors, names):
+    bboxes2d_cams = [[] for _ in cfg.CAMERA_NAMES]
+    labels2d_cams = [[] for _ in cfg.CAMERA_NAMES]
+    centers2d_cams = [[] for _ in cfg.CAMERA_NAMES]
+    depths_cams = [[] for _ in cfg.CAMERA_NAMES]
+    bboxes2d_actor_ids = [[] for _ in cfg.CAMERA_NAMES]
+    visible_pixels_cams = [[] for _ in cfg.CAMERA_NAMES]
+    visibility_scores_cams = [[] for _ in cfg.CAMERA_NAMES]
+    boxes = []
+    names = []
+    velocities = []
+    actor_ids_3d = []
+    object_visibility_scores = []
+    visible_camera_counts = []
+    for actor, name, box3d, velocity in candidates_3d:
+        per_camera = []
+        for camera_name in cfg.CAMERA_NAMES:
+            camera_world_transform = camera_transforms[camera_name]
+            intrinsic = intrinsics[camera_name]
             projection = project_actor_box(
                 actor,
                 camera_world_transform,
@@ -869,22 +1051,66 @@ def collect_ground_truth(world, ego, camera_transforms, intrinsics):
                 cfg.IMAGE_WIDTH,
                 cfg.IMAGE_HEIGHT,
             )
+            if projection is not None and cfg.REQUIRE_INSTANCE_VISIBILITY:
+                projection = clean_instance_projection(
+                    projection,
+                    actor,
+                    name,
+                    decoded_instance_ids[camera_name],
+                )
+            elif projection is not None:
+                bbox2d, center2d, depth = projection
+                projection = {
+                    "bbox": bbox2d,
+                    "center": center2d,
+                    "depth": depth,
+                    "visible_pixels": 0,
+                    "visibility_score": 1.0,
+                }
+            per_camera.append(projection)
+        clean_projections = [item for item in per_camera if item is not None]
+        if cfg.REQUIRE_INSTANCE_VISIBILITY and not clean_projections:
+            continue
+        boxes.append(box3d)
+        names.append(name)
+        velocities.append(velocity)
+        actor_ids_3d.append(actor.id)
+        object_visibility_scores.append(
+            max(item["visibility_score"] for item in clean_projections)
+            if clean_projections
+            else 0.0
+        )
+        visible_camera_counts.append(len(clean_projections))
+        for camera_index, projection in enumerate(per_camera):
             if projection is None:
                 continue
-            bbox2d, center2d, depth = projection
-            camera_boxes.append(bbox2d)
-            camera_labels.append(class_to_index[name])
-            camera_centers.append(center2d)
-            camera_depths.append(depth)
-        bboxes2d_cams.append(
-            np.asarray(camera_boxes, dtype=np.float32).reshape(-1, 4)
-        )
-        labels2d_cams.append(np.asarray(camera_labels, dtype=np.int64))
-        centers2d_cams.append(
-            np.asarray(camera_centers, dtype=np.float32).reshape(-1, 2)
-        )
-        depths_cams.append(np.asarray(camera_depths, dtype=np.float32))
-        bboxes_ignore_cams.append(np.empty((0, 4), dtype=np.float32))
+            bboxes2d_cams[camera_index].append(projection["bbox"])
+            labels2d_cams[camera_index].append(class_to_index[name])
+            centers2d_cams[camera_index].append(projection["center"])
+            depths_cams[camera_index].append(projection["depth"])
+            bboxes2d_actor_ids[camera_index].append(actor.id)
+            visible_pixels_cams[camera_index].append(projection["visible_pixels"])
+            visibility_scores_cams[camera_index].append(
+                projection["visibility_score"]
+            )
+
+    bboxes2d_cams = [
+        np.asarray(items, dtype=np.float32).reshape(-1, 4)
+        for items in bboxes2d_cams
+    ]
+    labels2d_cams = [
+        np.asarray(items, dtype=np.int64) for items in labels2d_cams
+    ]
+    centers2d_cams = [
+        np.asarray(items, dtype=np.float32).reshape(-1, 2)
+        for items in centers2d_cams
+    ]
+    depths_cams = [
+        np.asarray(items, dtype=np.float32) for items in depths_cams
+    ]
+    bboxes_ignore_cams = [
+        np.empty((0, 4), dtype=np.float32) for _ in cfg.CAMERA_NAMES
+    ]
 
     count = len(boxes)
     return {
@@ -901,6 +1127,23 @@ def collect_ground_truth(world, ego, camera_transforms, intrinsics):
         "centers2d": centers2d_cams,
         "depths": depths_cams,
         "bboxes_ignore": bboxes_ignore_cams,
+        "actor_ids": np.asarray(actor_ids_3d, dtype=np.int64),
+        "bboxes2d_actor_ids": [
+            np.asarray(items, dtype=np.int64) for items in bboxes2d_actor_ids
+        ],
+        "visible_pixels": [
+            np.asarray(items, dtype=np.int32) for items in visible_pixels_cams
+        ],
+        "visibility_scores": [
+            np.asarray(items, dtype=np.float32)
+            for items in visibility_scores_cams
+        ],
+        "object_visibility_scores": np.asarray(
+            object_visibility_scores, dtype=np.float32
+        ),
+        "visible_camera_counts": np.asarray(
+            visible_camera_counts, dtype=np.int64
+        ),
     }
 
 
@@ -975,6 +1218,19 @@ def collection_metadata(args):
         "vehicles": args.vehicles,
         "seed": args.seed,
     }
+    if cfg.REQUIRE_INSTANCE_VISIBILITY:
+        metadata.update(
+            {
+                "instance_visibility_filter": True,
+                "instance_image_size": [
+                    cfg.INSTANCE_IMAGE_WIDTH,
+                    cfg.INSTANCE_IMAGE_HEIGHT,
+                ],
+                "label_policy": (
+                    "real_carla_actors_visible_in_synchronized_instance_mask"
+                ),
+            }
+        )
     if args.scenario_matrix:
         metadata.update(
             {
@@ -1181,15 +1437,23 @@ def collect_scene(
             maneuver=spec["maneuver"],
             ego_route=ego_route,
         )
-        cameras, camera_queues = spawn_cameras(world, ego)
+        (
+            cameras,
+            camera_queues,
+            instance_cameras,
+            instance_queues,
+        ) = spawn_cameras(world, ego)
         scene_actors.extend(traffic)
         if not getattr(ego, "is_virtual", False):
             scene_actors.append(ego)
         scene_actors.extend(cameras.values())
+        scene_actors.extend(instance_cameras.values())
 
         for _ in range(args.warmup_frames):
             frame = world.tick()
             for sensor_queue in camera_queues.values():
+                get_matching_sensor_frame(sensor_queue, frame)
+            for sensor_queue in instance_queues.values():
                 get_matching_sensor_frame(sensor_queue, frame)
 
         distances = sorted(
@@ -1213,11 +1477,27 @@ def collect_scene(
                 )
                 ego.set_transform(ego_route["trajectory"][trajectory_index])
                 update_virtual_cameras(client, cameras, ego)
+                update_virtual_cameras(client, instance_cameras, ego)
             frame = world.tick()
             images = {
                 name: get_matching_sensor_frame(camera_queues[name], frame)
                 for name in cfg.CAMERA_NAMES
             }
+            instance_images = {
+                name: get_matching_sensor_frame(instance_queues[name], frame)
+                for name in cfg.CAMERA_NAMES
+            } if cfg.REQUIRE_INSTANCE_VISIBILITY else {}
+            for name, instance_image in instance_images.items():
+                if instance_image.frame != images[name].frame:
+                    raise RuntimeError(
+                        "Unsynchronized RGB/instance frame for {}: {} != {}".format(
+                            name, images[name].frame, instance_image.frame
+                        )
+                    )
+                if abs(instance_image.timestamp - images[name].timestamp) > 1e-4:
+                    raise RuntimeError(
+                        "Unsynchronized RGB/instance timestamp for {}".format(name)
+                    )
             if step % args.capture_every:
                 continue
 
@@ -1288,7 +1568,13 @@ def collect_scene(
                 "route_progress_m": route_progress,
             }
             info.update(
-                collect_ground_truth(world, ego, camera_transforms, intrinsics)
+                collect_ground_truth(
+                    world,
+                    ego,
+                    camera_transforms,
+                    intrinsics,
+                    instance_images=instance_images,
+                )
             )
             if scene_infos:
                 scene_infos[-1]["next"] = token

@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-"""Drive a car around CARLA and record a nuCarla-shaped six-camera sequence.
+"""Drive a car around CARLA and record a nuCarla-shaped camera sequence.
 
 Spawns an ego vehicle plus background traffic, hands everything to the traffic
-manager, and records the six surround cameras in lock-step at nuCarla's 2 Hz
-keyframe rate. The rig is placed to match nuCarla's calibration exactly -- same
-offsets, same 65 degree FOV, same 1600x900 frames -- so the recorded clip can
-be fed straight to a model trained on that dataset.
+manager, and records the surround cameras in lock-step at nuCarla's 2 Hz
+keyframe rate. The optional seven-camera profile adds a genuine co-located
+30-degree forward sensor to the original six 65-degree, 1600x900 cameras.
 
 Sensor-to-lidar transforms are copied from the nuCarla calibration rather than
 re-derived from CARLA, which keeps the geometry the model was trained on intact
@@ -36,15 +35,39 @@ RIG = {
     "CAM_BACK_LEFT": dict(x=1.036, y=0.485, z=1.591, yaw=108.6),
     "CAM_BACK_RIGHT": dict(x=1.015, y=-0.481, z=1.562, yaw=-110.8),
 }
-CAM_ORDER = list(RIG)
-IMAGE_W, IMAGE_H, FOV = 1600, 900, 65.0
+RIG["CAM_FRONT_NARROW"] = dict(RIG["CAM_FRONT"])
+
+SIX_CAMERA_ORDER = [
+    "CAM_FRONT",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_LEFT",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+]
+SEVEN_CAMERA_ORDER = [
+    "CAM_FRONT",
+    "CAM_FRONT_NARROW",
+    "CAM_FRONT_RIGHT",
+    "CAM_FRONT_LEFT",
+    "CAM_BACK",
+    "CAM_BACK_LEFT",
+    "CAM_BACK_RIGHT",
+]
+CAMERA_PROFILES = {
+    "nucarla-6cam": SIX_CAMERA_ORDER,
+    "nucarla-7cam-front-narrow-fov30": SEVEN_CAMERA_ORDER,
+}
+IMAGE_W, IMAGE_H = 1600, 900
+CAMERA_FOVS = {channel: 65.0 for channel in SIX_CAMERA_ORDER}
+CAMERA_FOVS["CAM_FRONT_NARROW"] = 30.0
 
 
 def build_camera(world, ego, channel, out_dir):
     blueprint = world.get_blueprint_library().find("sensor.camera.rgb")
     blueprint.set_attribute("image_size_x", str(IMAGE_W))
     blueprint.set_attribute("image_size_y", str(IMAGE_H))
-    blueprint.set_attribute("fov", str(FOV))
+    blueprint.set_attribute("fov", str(CAMERA_FOVS[channel]))
     spec = RIG[channel]
     # CARLA is left-handed with y pointing right, so the lateral offset and the
     # yaw both flip sign relative to the nuScenes numbers above.
@@ -68,7 +91,13 @@ def main() -> int:
     parser.add_argument("--warmup", type=int, default=40, help="ticks before recording")
     parser.add_argument("--out", default="data/carla_live")
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument(
+        "--camera-profile",
+        choices=tuple(CAMERA_PROFILES),
+        default="nucarla-6cam",
+    )
     args = parser.parse_args()
+    camera_order = CAMERA_PROFILES[args.camera_profile]
 
     random.seed(args.seed)
     out_dir = Path(args.out)
@@ -165,7 +194,7 @@ def main() -> int:
         )
 
         image_queues = {}
-        for channel in CAM_ORDER:
+        for channel in camera_order:
             camera = build_camera(world, ego, channel, out_dir / "samples")
             channel_queue = queue.Queue()
             camera.listen(channel_queue.put)
@@ -182,14 +211,14 @@ def main() -> int:
             # Ten simulation ticks per recorded keyframe -> 0.5 s spacing.
             for sub_step in range(10):
                 world.tick()
-                images = {c: image_queues[c].get() for c in CAM_ORDER}
+                images = {c: image_queues[c].get() for c in camera_order}
                 if sub_step < 9:
                     continue
 
             transform = ego.get_transform()
             timestamp = int(world.get_snapshot().timestamp.elapsed_seconds * 1e6)
             paths = {}
-            for channel in CAM_ORDER:
+            for channel in camera_order:
                 name = f"{channel}__{timestamp}.jpg"
                 path = out_dir / "samples" / channel / name
                 images[channel].save_to_disk(str(path))
@@ -218,7 +247,11 @@ def main() -> int:
                     town=args.town,
                     frames=len(records),
                     image_size=[IMAGE_W, IMAGE_H],
-                    fov=FOV,
+                    camera_profile=args.camera_profile,
+                    camera_order=camera_order,
+                    camera_fovs={
+                        channel: CAMERA_FOVS[channel] for channel in camera_order
+                    },
                     records=records,
                 ),
                 stream,

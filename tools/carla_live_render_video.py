@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """Run a checkpoint over a recorded CARLA clip and write an annotated video.
 
-Each output frame carries the six surround cameras with predicted 3D boxes
-drawn on them plus a bird's-eye panel. Frames go through the dataloader in
-order because StreamPETR's memory queue is temporal.
+Each output frame carries the six or seven surround cameras with predicted 3D
+boxes drawn on them plus a bird's-eye panel. Frames go through the dataloader
+in order because StreamPETR's memory queue is temporal.
 """
 
 from __future__ import annotations
@@ -25,9 +25,13 @@ from mmcv.runner import load_checkpoint, wrap_fp16_model
 from mmdet3d.datasets import build_dataset
 from mmdet3d.models import build_model
 
-CAM_GRID = [
+SIX_CAM_GRID = [
     ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_RIGHT"],
     ["CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT"],
+]
+SEVEN_CAM_GRID = [
+    ["CAM_FRONT_LEFT", "CAM_FRONT", "CAM_FRONT_NARROW", "CAM_FRONT_RIGHT"],
+    ["CAM_BACK_LEFT", "CAM_BACK", "CAM_BACK_RIGHT", None],
 ]
 
 # The full nuCarla checkpoint deliberately keeps the official nuScenes
@@ -157,6 +161,8 @@ def main() -> int:
     if test_samples_per_gpu != 1:
         raise ValueError("temporal CARLA demo requires samples_per_gpu=1")
     classes = list(dataset.CLASSES)
+    camera_names = tuple(dataset.data_infos[0]["cams"])
+    cam_grid = SEVEN_CAM_GRID if "CAM_FRONT_NARROW" in camera_names else SIX_CAM_GRID
     from projects.mmdet3d_plugin.datasets.builder import build_dataloader
 
     data_loader = build_dataloader(
@@ -180,7 +186,7 @@ def main() -> int:
     cam_width = args.cam_width
     cam_height = int(cam_width * 900 / 1600)
     bev_size = cam_height * 2
-    frame_width = cam_width * 3 + bev_size
+    frame_width = cam_width * len(cam_grid[0]) + bev_size
     frame_height = cam_height * 2
     writer = cv2.VideoWriter(
         str(output), cv2.VideoWriter_fourcc(*"mp4v"), args.fps, (frame_width, frame_height)
@@ -219,9 +225,14 @@ def main() -> int:
 
             info = dataset.data_infos[index]
             rows = []
-            for row in CAM_GRID:
+            for row in cam_grid:
                 tiles = []
                 for channel in row:
+                    if channel is None:
+                        tiles.append(
+                            np.full((cam_height, cam_width, 3), 24, dtype=np.uint8)
+                        )
+                        continue
                     image = cv2.imread(info["cams"][channel]["data_path"])
                     image = cv2.resize(image, (cam_width, cam_height))
                     draw_on_camera(
@@ -278,6 +289,7 @@ def main() -> int:
         "config": args.config,
         "checkpoint": args.checkpoint,
         "annotation_file": cfg.data.test.ann_file,
+        "camera_order": list(camera_names),
         "score_threshold": args.score_thr,
         "frames": len(counts),
         "mean_detections_per_frame": float(np.mean(counts)),
